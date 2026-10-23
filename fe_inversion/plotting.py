@@ -137,7 +137,7 @@ def crossplots(r, path):
     for i, s in enumerate(sets):
         sh = (s["used"]["nphi_sh"], s["used"]["rho_sh"])
         tri = np.array([quartz, sh, water, quartz])
-        ax[1].plot(tri[:, 0], tri[:, 1], "k-", lw=0.8, ls="-" if i == 0 else "--")
+        ax[1].plot(tri[:, 0], tri[:, 1], color="k", lw=0.8, ls="-" if i == 0 else "--")
         ax[1].plot(*sh, "k" + markers[i % 4], ms=6, label=s["name"])
     for name, (x, y) in (("Quartz", quartz), ("Water", water)):
         ax[1].plot(x, y, "ko", ms=5)
