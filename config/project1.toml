@@ -1,0 +1,90 @@
+# PGE 385K Homework Project No. 1: shaly-sandstone (laminated) interpretation.
+# Depths are measured depth (MD) in ft unless stated otherwise.
+# Any end-point set to "auto" is estimated from the zones below.
+
+[data]
+las = "C:/Users/nkant/OneDrive/The University of Texas at Austin/Fall 2026/PGE 385K - Adv. Formation Eval/PGE 385K - Homework Problems/Homework Projects/Homework Project No. 1/LASOut_ALL_W18.las"
+pressures = "C:/Users/nkant/OneDrive/The University of Texas at Austin/Fall 2026/PGE 385K - Adv. Formation Eval/PGE 385K - Homework Problems/Homework Projects/Homework Project No. 1/LAS_pressures.las"
+top = 9600.0
+bottom = 10200.0
+output_dir = "outputs/project1"
+
+# LAS mnemonic for each standard curve name used by the program.
+[curves]
+GR = "GR"
+RHOB = "RHOZ"
+NPHI = "TNPH"          # thermal neutron porosity, limestone units
+PE = "PE"
+DRHO = "DRHO"
+CALI = "CALI"
+RH = "RH72H_1D_FLT"    # resistivity parallel to bedding (horizontal)
+RV = "RV72H_1D_FLT"    # resistivity perpendicular to bedding (vertical)
+RXO = "AT10"           # shallowest induction, used as flushed-zone resistivity
+RT = "AT90"            # deepest induction
+POTA = "POTA"
+THOR = "HTHO"
+URAN = "HURA"
+SDEV = "SDEV"
+HAZI = "HAZI"
+CORE_POR = "COREPOR"
+CORE_PERM = "COREPERM"
+CORE_SW = "CORESW"
+CORE_SO = "CORESO"
+CORE_RHOG = "CORERHOG"
+
+# Formation tops drawn on the plots (from the HW 1 report).
+[tops]
+"Sequence 1 (shale + HC)" = 9600.0
+"Sequence 2 (HC + water)" = 9825.0
+"Base shale" = 10158.0
+
+[zones]
+shale = [10160.0, 10200.0]   # thickest "pure" shale: shale end-points
+water = [10045.0, 10125.0]   # water-bearing sand: Rw and Rmf calibration
+clean_sand_gr_percentile = 3 # GR percentile taken as clean sand
+max_drho = 0.05              # |DRHO| above this flags bad density data
+
+[archie]
+a = 1.0
+m = 2.3
+n = 1.97
+
+# Matrix and fluid properties. Each entry is [mean, standard deviation].
+# Resistivities use a relative (fractional) standard deviation.
+[properties]
+rho_ma = [2.65, 0.01]        # g/cc, quartz
+nphi_ma = [-0.035, 0.01]     # apparent neutron of quartz in limestone units
+rho_w = [1.05, 0.02]         # g/cc, formation water
+rho_hc = ["auto", 0.08]      # g/cc, "auto" = from pressure gradient
+hi_hc = [0.9, 0.1]           # hydrogen index of hydrocarbon
+rw = ["auto", 0.15]          # ohm.m at formation temperature (relative std)
+rmf = ["auto", 0.20]         # ohm.m (relative std)
+
+# Shale and clean-sand end-points: "auto" = median over the zone above.
+[endpoints]
+gr_sand = ["auto", 4.0]
+gr_shale = ["auto", 6.0]
+rho_sh = ["auto", 0.02]
+nphi_sh = ["auto", 0.02]
+rsh_h = ["auto", 0.10]       # relative std
+rsh_v = ["auto", 0.15]       # relative std
+phi_sh = ["auto", 0.02]      # density porosity of shale laminae (Thomas-Stieber shale point)
+
+[pressure]
+hc_interval = [9725.0, 9890.0]   # points used for the hydrocarbon gradient
+water_interval = [10040.0, 10080.0]
+
+[inversion]
+realizations = 1000
+seed = 385
+chunk = 25                 # realizations per parallel job (memory control)
+workers = 0                # parallel processes, 0 = all CPU cores but one, 1 = serial
+screen_iterations = 12     # short solves from two starting Sw values
+iterations = 30            # refinement of the better start
+csh_prior_std = 0.15       # trust in the GR-derived Csh used as prior
+phi_prior = [0.25, 0.12]   # weak prior on sand porosity
+sw_prior = [0.6, 0.5]      # weak prior on sand water saturation
+sigma_log_r = 0.08         # Rh, Rv measurement error (natural-log units, ~8%)
+sigma_rhob = 0.02          # g/cc
+sigma_nphi = 0.025         # v/v
+shale_mask = 0.95          # sand properties are undefined above this Csh

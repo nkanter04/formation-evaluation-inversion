@@ -13,3 +13,9 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# Generated results and local data
+outputs/
+data/
+*.las
+.pytest_cache/
