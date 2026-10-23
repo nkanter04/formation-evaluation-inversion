@@ -18,9 +18,36 @@ def test_laminated_closed_form_round_trip():
     np.testing.assert_allclose(r, rss, rtol=1e-8)
 
 
+def test_laminated_closed_form_with_depth_varying_shale():
+    csh, rss = np.array([0.3, 0.3]), np.array([5.0, 5.0])
+    rsh_h, rsh_v = np.array([0.64, 0.69]), np.array([2.3, 3.2])
+    rh = 1 / (csh / rsh_h + (1 - csh) / rss)
+    rv = csh * rsh_v + (1 - csh) * rss
+    c, r = petro.laminated_resistivity(rh, rv, rsh_h, rsh_v)
+    np.testing.assert_allclose(c, csh, rtol=1e-8)
+    np.testing.assert_allclose(r, rss, rtol=1e-8)
+    # Isotropic shale (Rsh_v = Rsh_h) uses the linear branch.
+    c, r = petro.laminated_resistivity(rh[:1], rv[:1] * 0 + 0.3 * 1.0 + 0.7 * 5.0, 1.0, 1.0)
+    assert np.isfinite(c).all()
+
+
 def test_ternary_volumes_sum_to_one():
     vs, vsh, phi = petro.neutron_density_ternary([2.3], [0.3], (2.65, -0.035), (2.39, 0.42), (1.05, 1.0))
     assert np.isclose(vs + vsh + phi, 1.0).all()
+
+
+def test_ternary_with_depth_varying_shale_point():
+    rho_sh, nphi_sh = np.array([2.39, 2.345]), np.array([0.41, 0.445])
+    # Pure shale at each depth must return Vsh = 1.
+    vs, vsh, phi = petro.neutron_density_ternary(rho_sh, nphi_sh, (2.65, -0.035), (rho_sh, nphi_sh), (1.05, 1.0))
+    np.testing.assert_allclose(vsh, 1.0, atol=1e-10)
+
+
+def test_zone_index_assigns_nearest_zone_outside_ranges():
+    from fe_inversion.workflow import zone_index
+    sets = [dict(top=9600.0, bottom=10158.0), dict(top=10158.0, bottom=10200.0)]
+    idx = zone_index([9500.0, 9700.0, 10158.0, 10200.0, 10300.0], sets)
+    assert idx.tolist() == [0, 0, 1, 1, 1]
 
 
 def test_inversion_recovers_noise_free_synthetic():

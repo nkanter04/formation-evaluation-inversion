@@ -116,7 +116,11 @@ def log_composite(r, path):
 
 
 def crossplots(r, path):
-    df, ep, props, conv = r["df"], r["endpoints"], r["props"], r["conv"]
+    df, props, conv = r["df"], r["props"], r["conv"]
+    sets = r["shale_sets"]
+    # Model grids use the shale zone covering most samples; every zone's shale point is marked.
+    ep = sets[int(np.bincount(r["zone_idx"]).argmax())]["used"]
+    markers = ("s", "D", "^", "v")
     d = df.index.values
     fig, ax = plt.subplots(2, 3, figsize=(16, 10))
     ax = ax.ravel()
@@ -129,13 +133,16 @@ def crossplots(r, path):
     fig.colorbar(sc, ax=ax[0], label="Depth (ft)")
 
     sc = ax[1].scatter(df.NPHI, df.RHOB, c=df.GR, s=5, cmap="copper_r", vmin=20, vmax=110)
-    pts = {"Quartz": (props["nphi_ma"], props["rho_ma"]), "Shale": (ep["nphi_sh"], ep["rho_sh"]),
-           "Water": (1.0, props["rho_w"])}
-    tri = np.array(list(pts.values()) + [list(pts.values())[0]])
-    ax[1].plot(tri[:, 0], tri[:, 1], "k-", lw=0.8)
-    for name, (x, y) in pts.items():
+    quartz, water = (props["nphi_ma"], props["rho_ma"]), (1.0, props["rho_w"])
+    for i, s in enumerate(sets):
+        sh = (s["used"]["nphi_sh"], s["used"]["rho_sh"])
+        tri = np.array([quartz, sh, water, quartz])
+        ax[1].plot(tri[:, 0], tri[:, 1], "k-", lw=0.8, ls="-" if i == 0 else "--")
+        ax[1].plot(*sh, "k" + markers[i % 4], ms=6, label=s["name"])
+    for name, (x, y) in (("Quartz", quartz), ("Water", water)):
         ax[1].plot(x, y, "ko", ms=5)
         ax[1].annotate(name, (x, y), textcoords="offset points", xytext=(5, 5), fontsize=8)
+    ax[1].legend(loc="lower right", title="Shale points")
     for phi in (0.1, 0.2, 0.3, 0.4):  # clean-sand water line porosity ticks
         x = phi + (1 - phi) * props["nphi_ma"]
         y = phi * props["rho_w"] + (1 - phi) * props["rho_ma"]
@@ -178,10 +185,12 @@ def crossplots(r, path):
         ax[4].plot(rh, rv, color="#D18A28", lw=0.6, ls="--")
         ax[4].annotate(f"Rss={rss:g}", (rh[0], rv[0]), fontsize=7, color="#D18A28")
     ax[4].plot([0.1, 100], [0.1, 100], "k:", lw=0.8)
-    ax[4].plot(ep["rsh_h"], ep["rsh_v"], "ks", ms=6)
+    for i, s in enumerate(sets):
+        ax[4].plot(s["used"]["rsh_h"], s["used"]["rsh_v"], "k" + markers[i % 4], ms=6, label=s["name"])
+    ax[4].legend(loc="lower right", title="Shale points")
     ax[4].set(xscale="log", yscale="log", xlim=(0.2, 20), ylim=(0.2, 100),
               xlabel="Rh, parallel (ohm.m)", ylabel="Rv, perpendicular (ohm.m)",
-              title="(e) Rv vs. Rh with laminated-model grid")
+              title=f"(e) Rv vs. Rh, laminated grid for {sets[int(np.bincount(r['zone_idx']).argmax())]['name']}")
     fig.colorbar(sc, ax=ax[4], label="GR (gAPI)")
 
     phi_clean = float(np.nanpercentile(conv.PHI_SS_D[conv.CSH_RES < 0.2], 90)) \
@@ -189,6 +198,10 @@ def crossplots(r, path):
     sc = ax[5].scatter(conv.CSH_RES, conv.PHIT_D, c=d, s=5, cmap="viridis_r")
     for name, (x, y) in petro.thomas_stieber_lines(phi_clean, ep["phi_sh"]).items():
         ax[5].plot(x, y, lw=1.2, label=name)
+    for i, s in enumerate(sets):  # laminar line to each zone's shale point
+        if s["used"] is not ep:
+            ax[5].plot([0, 1], [phi_clean, s["used"]["phi_sh"]], color="C0", lw=1, ls="--",
+                       label=f"laminar ({s['name']})")
     ax[5].set(xlim=(0, 1), ylim=(0, 0.5), xlabel="Csh (resistivity, laminated)",
               ylabel="Total density porosity (v/v)", title="(f) Thomas-Stieber")
     ax[5].legend(loc="upper right")
@@ -355,14 +368,21 @@ def core_plots(r, path):
               title="Permeability vs. (irreducible) Sw")
     ax[1].legend()
 
+    max_rhog = r["cfg"]["zones"].get("representative_plug_max_rhog", 9.9)
+    rep = (c.CORE_RHOG <= max_rhog).values
     for a, (inv, core, lab) in zip(ax[2:], (("phi", "CORE_POR", "porosity"), ("sw", "CORE_SW", "Sw"))):
-        err = np.vstack([sc_[f"{inv}_p50"] - sc_[f"{inv}_p10"], sc_[f"{inv}_p90"] - sc_[f"{inv}_p50"]])
-        a.errorbar(c[core], sc_[f"{inv}_p50"], yerr=np.clip(err, 0, None), fmt="o", ms=3.5,
-                   color=C["inv"], ecolor="#9FD3D7", elinewidth=0.8)
+        err = np.clip(np.vstack([sc_[f"{inv}_p50"] - sc_[f"{inv}_p10"],
+                                 sc_[f"{inv}_p90"] - sc_[f"{inv}_p50"]]), 0, None)
+        for sel, face, name in ((rep, C["inv"], f"Grain density ≤ {max_rhog:.2f}"),
+                                (~rep, "white", f"Grain density > {max_rhog:.2f} (clay-bearing)")):
+            a.errorbar(c[core][sel], sc_[f"{inv}_p50"][sel], yerr=err[:, sel], fmt="o", ms=4,
+                       mfc=face, mec=C["inv"], color=C["inv"], ecolor="#9FD3D7", elinewidth=0.8,
+                       label=f"{name} ({sel.sum()})")
         lim = (0, 0.45) if inv == "phi" else (0, 1)
         a.plot(lim, lim, "k:", lw=1)
         a.set(xlim=lim, ylim=lim, xlabel=f"Core {lab}", ylabel=f"Inverted sand {lab} (P50, P10-P90)",
               title=f"Inversion vs. core {lab}")
+        a.legend(loc="upper left", fontsize=7)
     fig.tight_layout()
     fig.savefig(path, bbox_inches="tight", dpi=160)
     plt.close(fig)

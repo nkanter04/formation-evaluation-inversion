@@ -39,10 +39,25 @@ CORE_RHOG = "CORERHOG"
 "Base shale" = 10158.0
 
 [zones]
-shale = [10160.0, 10200.0]   # thickest "pure" shale: shale end-points
 water = [10045.0, 10125.0]   # water-bearing sand: Rw and Rmf calibration
 clean_sand_gr_percentile = 3 # GR percentile taken as clean sand
 max_drho = 0.05              # |DRHO| above this flags bad density data
+representative_plug_max_rhog = 2.70  # plugs with heavier grain density likely contain clay
+
+# Shale end-points vary with depth: each depth range takes its shale properties
+# (GR, RHOB, NPHI, Rh, Rv medians) from its own reference shale. The base shale is
+# denser (2.39 g/cc) than the shales higher up (about 2.35 g/cc).
+[[shale_zones]]
+name = "Upper shale (Sequences 1-2)"
+top = 9600.0
+bottom = 10158.0
+reference = [9650.0, 9690.0]
+
+[[shale_zones]]
+name = "Base shale"
+top = 10158.0
+bottom = 10200.0
+reference = [10160.0, 10200.0]
 
 [archie]
 a = 1.0
@@ -60,11 +75,13 @@ hi_hc = [0.9, 0.1]           # hydrogen index of hydrocarbon
 rw = ["auto", 0.15]          # ohm.m at formation temperature (relative std)
 rmf = ["auto", 0.20]         # ohm.m (relative std)
 
-# Shale and clean-sand end-points: "auto" = median over the zone above.
+# Shale and clean-sand end-points: "auto" = median over each zone's reference shale.
+# A number instead of "auto" applies to every shale zone. Each Monte Carlo
+# realization shifts all zones by the same draw from the standard deviation.
 [endpoints]
 gr_sand = ["auto", 4.0]
 gr_shale = ["auto", 6.0]
-rho_sh = ["auto", 0.02]
+rho_sh = ["auto", 0.03]      # wide: covers 2.33-2.39 g/cc seen across the well's shales
 nphi_sh = ["auto", 0.02]
 rsh_h = ["auto", 0.10]       # relative std
 rsh_v = ["auto", 0.15]       # relative std

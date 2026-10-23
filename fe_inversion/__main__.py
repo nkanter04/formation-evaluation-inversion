@@ -26,21 +26,29 @@ def write_outputs(r, out):
 
 
 def write_report(r, out, figures):
-    ep, eps, auto = r["endpoints"], r["endpoint_std"], r["endpoints_auto"]
+    ep, eps, sets = r["endpoints"], r["endpoint_std"], r["shale_sets"]
     pr, prs = r["props"], r["props_std"]
     s, df = r["summary"], r["df"]
     L = ["# Homework Project 1: interpretation summary", "",
          f"Interval {df.index[0]:.0f}-{df.index[-1]:.0f} ft MD, "
          f"{r['settings']['realizations']} Monte Carlo realizations, "
          f"run time {r['elapsed']:.0f} s.", "",
-         "## End-points (mean ± std used in the Monte Carlo)", "",
-         "| Parameter | Value | Std | Source |", "|---|---|---|---|"]
+         "## Shale end-points by zone (mean; std applies to every zone)", "",
+         "| Parameter | " + " | ".join(
+             f"{s['name']}<br>{s['top']:.0f}-{s['bottom']:.0f} ft, ref. {s['reference'][0]:.0f}-"
+             f"{s['reference'][1]:.0f} ft" for s in sets) + " | Std |",
+         "|---" * (len(sets) + 2) + "|"]
     rel = {"rsh_h", "rsh_v", "rw", "rmf"}
-    for k, v in {**ep, **pr}.items():
-        std = {**eps, **prs}[k]
-        std_txt = f"{100 * std:.0f} %" if k in rel else f"{std:.3g}"
-        src = "estimated" if (k in auto or k in ("rw", "rmf", "rho_hc")) else "config"
-        L.append(f"| {k} | {v:.4g} | {std_txt} | {src} |")
+    std_txt = lambda k, sd: f"{100 * sd:.0f} %" if k in rel else f"{sd:.3g}"
+    for k in workflow.ZONED:
+        L.append(f"| {k} | " + " | ".join(f"{s['used'][k]:.4g}" for s in sets)
+                 + f" | {std_txt(k, eps[k])} |")
+    L += ["", "## Other end-points and properties", "",
+          "| Parameter | Value | Std | Source |", "|---|---|---|---|"]
+    for k, v in {**{k: v for k, v in ep.items() if k not in workflow.ZONED}, **pr}.items():
+        sd = {**eps, **prs}[k]
+        src = "estimated" if k in ("gr_sand", "rw", "rmf", "rho_hc") else "config"
+        L.append(f"| {k} | {v:.4g} | {std_txt(k, sd)} | {src} |")
     w = r["water"]
     L += ["", f"Rw and Rmf come from the water sand ({w['n']} samples, Sw = Sxo = 1). "
           f"Rw = {w['rw']:.4f} ohm.m (log spread {w['rw_log_spread']:.2f}), "
@@ -66,15 +74,25 @@ def write_report(r, out, figures):
 
     core = df[df.CORE_POR.notna()]
     if len(core):
+        max_rhog = r["cfg"]["zones"].get("representative_plug_max_rhog", 9.9)
         L += ["## Inversion vs. core (P50 at core depths)", "",
-              "| Quantity | Bias (inv - core) | RMS difference | Correlation | Plugs |",
-              "|---|---|---|---|---|"]
+              f"Representative plugs have grain density ≤ {max_rhog:.2f} g/cc. Heavier plugs "
+              "likely contain clay or mica, so they are not clean sand laminae and are not "
+              "a like-for-like test of the sand-lamina porosity.", "",
+              "| Quantity | Plugs | Bias (inv - core) | RMS difference | Correlation | n |",
+              "|---|---|---|---|---|---|"]
+        groups = (("all", core.CORE_RHOG.notna() | True),
+                  ("representative", core.CORE_RHOG <= max_rhog),
+                  ("clay-bearing", core.CORE_RHOG > max_rhog))
         for inv, col in (("phi", "CORE_POR"), ("sw", "CORE_SW")):
-            a, b = s.loc[core.index, f"{inv}_p50"], core[col]
-            ok = a.notna() & b.notna()
-            dlt = a[ok] - b[ok]
-            L.append(f"| {inv} | {dlt.mean():+.3f} | {np.sqrt((dlt ** 2).mean()):.3f} | "
-                     f"{np.corrcoef(a[ok], b[ok])[0, 1]:.2f} | {ok.sum()} |")
+            for gname, sel in groups:
+                a, b = s.loc[core.index, f"{inv}_p50"][sel], core[col][sel]
+                ok = a.notna() & b.notna()
+                if ok.sum() < 3:
+                    continue
+                dlt = a[ok] - b[ok]
+                L.append(f"| {inv} | {gname} | {dlt.mean():+.3f} | {np.sqrt((dlt ** 2).mean()):.3f} | "
+                         f"{np.corrcoef(a[ok], b[ok])[0, 1]:.2f} | {ok.sum()} |")
         L.append("")
 
     L += ["## Zone averages (P50 of depth averages over sand, Csh < shale mask)", "",

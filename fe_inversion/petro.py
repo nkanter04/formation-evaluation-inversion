@@ -24,15 +24,19 @@ def csh_larionov_tertiary(igr):
 def neutron_density_ternary(rhob, nphi, sand, shale, fluid):
     """Solve sand-grain / shale / pore-fluid volumes from density and neutron.
 
-    `sand`, `shale`, `fluid` are (density, neutron) points. Returns (v_sand,
-    v_shale, phi) for every sample; the three always sum to 1 and are not clipped.
+    `sand`, `shale`, `fluid` are (density, neutron) points; any coordinate may be
+    an array over samples (depth-varying end-points). Returns (v_sand, v_shale,
+    phi) for every sample; the three always sum to 1 and are not clipped.
     """
-    A = np.array([[sand[0], shale[0], fluid[0]],
-                  [sand[1], shale[1], fluid[1]],
-                  [1.0, 1.0, 1.0]])
-    b = np.vstack([np.asarray(rhob, float), np.asarray(nphi, float), np.ones(np.size(rhob))])
-    v = np.linalg.solve(A, b)
-    return v[0], v[1], v[2]
+    rhob, nphi = np.asarray(rhob, float), np.asarray(nphi, float)
+    n = rhob.size
+    col = lambda v: np.broadcast_to(np.asarray(v, float), (n,))
+    A = np.stack([np.stack([col(sand[0]), col(shale[0]), col(fluid[0])], -1),
+                  np.stack([col(sand[1]), col(shale[1]), col(fluid[1])], -1),
+                  np.ones((n, 3))], axis=1)
+    b = np.stack([rhob, nphi, np.ones(n)], -1)
+    v = np.linalg.solve(A, b[..., None])[..., 0]
+    return v[:, 0], v[:, 1], v[:, 2]
 
 
 def laminated_resistivity(rh, rv, rsh_h, rsh_v):
@@ -41,17 +45,17 @@ def laminated_resistivity(rh, rv, rsh_h, rsh_v):
     Substituting Rss = (Rv - C*Rsh_v)/(1 - C) into the parallel equation gives
     C^2 (Rsh_v/Rsh_h - 1) + C (2 - Rsh_v/Rh - Rv/Rsh_h) + (Rv/Rh - 1) = 0.
     The root inside [0, 1] that yields a positive Rss is returned (NaN if none).
+    Shale resistivities may be scalars or arrays over samples.
     """
-    rh, rv = np.broadcast_arrays(np.asarray(rh, float), np.asarray(rv, float))
+    rh, rv, rsh_h, rsh_v = np.broadcast_arrays(*(np.asarray(v, float) for v in (rh, rv, rsh_h, rsh_v)))
     qa = rsh_v / rsh_h - 1.0
     qb = 2.0 - rsh_v / rh - rv / rsh_h
     qc = rv / rh - 1.0
     with np.errstate(invalid="ignore", divide="ignore"):
-        if abs(qa) < 1e-12:
-            roots = [-qc / qb]
-        else:
-            disc = np.sqrt(qb * qb - 4 * qa * qc)
-            roots = [(-qb + disc) / (2 * qa), (-qb - disc) / (2 * qa)]
+        linear = np.abs(qa) < 1e-12  # isotropic shale: the quadratic degenerates
+        disc = np.sqrt(qb * qb - 4 * qa * qc)
+        roots = [np.where(linear, -qc / qb, (-qb + disc) / (2 * qa)),
+                 np.where(linear, np.nan, (-qb - disc) / (2 * qa))]
         csh = np.full(rh.shape, np.nan)
         rss = np.full(rh.shape, np.nan)
         for r in roots:

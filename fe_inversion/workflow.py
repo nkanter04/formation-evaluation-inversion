@@ -17,25 +17,46 @@ def _value(entry, auto_value):
     return (auto_value if mean == "auto" else float(mean)), float(std)
 
 
-def estimate_endpoints(df, cfg):
-    """Shale and clean-sand end-points from the configured zones."""
-    sh = _zone(df, cfg["zones"]["shale"])
-    return {
-        "gr_sand": float(np.nanpercentile(df.GR, cfg["zones"]["clean_sand_gr_percentile"])),
-        "gr_shale": float(sh.GR.median()),
-        "rho_sh": float(sh.RHOB.median()),
-        "nphi_sh": float(sh.NPHI.median()),
-        "rsh_h": float(sh.RH.median()),
-        "rsh_v": float(sh.RV.median()),
-    }
+ZONED = ("gr_shale", "rho_sh", "nphi_sh", "rsh_h", "rsh_v", "phi_sh")
 
 
-def shale_consistency(df, cfg, other=(9650.0, 9690.0)):
-    """Compare the reference shale with the shale at the top of the interval (task 4)."""
+def shale_sets(df, cfg, props):
+    """Shale end-points of every shale zone, estimated from its reference interval."""
+    sets = []
+    for z in cfg["shale_zones"]:
+        sh = _zone(df, z["reference"])
+        auto = {"gr_shale": float(sh.GR.median()), "rho_sh": float(sh.RHOB.median()),
+                "nphi_sh": float(sh.NPHI.median()), "rsh_h": float(sh.RH.median()),
+                "rsh_v": float(sh.RV.median())}
+        # Shale porosity seen by the density log (Thomas-Stieber shale point).
+        auto["phi_sh"] = float(petro.density_porosity(auto["rho_sh"], props["rho_ma"], props["rho_w"]))
+        sets.append(dict(name=z["name"], top=float(z["top"]), bottom=float(z["bottom"]),
+                         reference=tuple(z["reference"]), auto=auto, used={}))
+    return sets
+
+
+def zone_index(depth, sets):
+    """Index of the shale zone that applies at each depth (nearest zone outside all ranges)."""
+    depth = np.asarray(depth, float)
+    idx = np.full(depth.shape, -1)
+    for i, s in enumerate(sets):
+        idx[(depth >= s["top"]) & (depth < s["bottom"]) & (idx < 0)] = i
+    outside = idx < 0
+    idx[outside] = np.where(depth[outside] < sets[0]["top"], 0, len(sets) - 1)
+    return idx
+
+
+def _subset(ep, mask):
+    """End-points restricted to the samples in `mask` (arrays are sliced, scalars kept)."""
+    return {k: (v[mask] if np.ndim(v) else v) for k, v in ep.items()}
+
+
+def shale_consistency(df, sets):
+    """Compare the reference shales of the shale zones (task 4)."""
     rows = {}
-    for label, iv in (("Reference shale", cfg["zones"]["shale"]), ("Upper shale", other)):
-        z = _zone(df, iv)
-        rows[f"{label} {iv[0]:.0f}-{iv[1]:.0f} ft"] = {
+    for s in sets:
+        z = _zone(df, s["reference"])
+        rows[f"{s['name']} {s['reference'][0]:.0f}-{s['reference'][1]:.0f} ft"] = {
             c: z[c].median() for c in ("GR", "RHOB", "NPHI", "PE", "POTA", "THOR", "RH", "RV")}
     return pd.DataFrame(rows).T
 
@@ -68,12 +89,15 @@ def pressure_analysis(press, traj, cfg, rho_w):
 
 def calibrate_water(df, ep, archie, rho_ma, rho_w, interval):
     """Rw and Rmf from the water sand, using the laminated model (Sw = Sxo = 1)."""
-    z = _zone(df, interval)
+    mask = (df.index >= interval[0]) & (df.index <= interval[1])
+    z, ep = df[mask], _subset(ep, mask)
     csh, rss = petro.laminated_resistivity(z.RH, z.RV, ep["rsh_h"], ep["rsh_v"])
     phi = petro.density_porosity(petro.sand_density(z.RHOB, csh, ep["rho_sh"]), rho_ma, rho_w)
+    phi = np.asarray(phi)
     ok = (csh < 0.5) & (phi > 0.05) & np.isfinite(rss)
     rw = petro.archie_rw(rss[ok], phi[ok], archie["a"], archie["m"])
-    rxo_ss = petro.sand_rxo_parallel(z.RXO.values[ok], csh[ok], ep["rsh_h"])
+    rsh_h = np.broadcast_to(ep["rsh_h"], csh.shape)[ok]
+    rxo_ss = petro.sand_rxo_parallel(z.RXO.values[ok], csh[ok], rsh_h)
     rmf = petro.archie_rw(rxo_ss, phi[ok], archie["a"], archie["m"])
     spread = lambda v: float(np.nanstd(np.log(v)))
     return dict(rw=float(np.nanmedian(rw)), rw_log_spread=spread(rw),
@@ -107,9 +131,10 @@ def conventional(df, ep, archie, props, phi_sh):
 
 def core_fluid_density(df, csh, rho_sh):
     """Apparent pore-fluid density at core depths (task 5)."""
-    c = df[df.CORE_POR.notna()].copy()
+    has_core = df.CORE_POR.notna().values
+    c = df[has_core].copy()
     cs = np.minimum(csh.loc[c.index], 0.9)
-    c["RHO_SS"] = petro.sand_density(c.RHOB, cs, rho_sh)
+    c["RHO_SS"] = petro.sand_density(c.RHOB, cs, np.asarray(rho_sh)[has_core])
     c["RHO_F_CORE"] = petro.fluid_density_from_core(c.RHO_SS, c.CORE_POR, c.CORE_RHOG)
     return c
 
@@ -126,12 +151,18 @@ def run(cfg, progress=None, realizations=None):
     props, props_std = {}, {}
     for name in ("rho_ma", "nphi_ma", "rho_w", "hi_hc"):
         props[name], props_std[name] = _value(cfg["properties"][name], None)
-    ep_auto = estimate_endpoints(df, cfg)
-    # Shale porosity seen by the density log (Thomas-Stieber shale point).
-    ep_auto["phi_sh"] = float(petro.density_porosity(ep_auto["rho_sh"], props["rho_ma"], props["rho_w"]))
+    sets = shale_sets(df, cfg, props)
+    zidx = zone_index(df.index.values, sets)
+    gr_sand_auto = float(np.nanpercentile(df.GR, cfg["zones"]["clean_sand_gr_percentile"]))
     ep, ep_std = {}, {}
-    for name, entry in cfg["endpoints"].items():
-        ep[name], ep_std[name] = _value(entry, ep_auto.get(name))
+    for name, (mean, std) in cfg["endpoints"].items():
+        ep_std[name] = float(std)
+        if name in ZONED:
+            for s in sets:
+                s["used"][name] = s["auto"][name] if mean == "auto" else float(mean)
+            ep[name] = np.array([s["used"][name] for s in sets])[zidx]
+        else:
+            ep[name] = gr_sand_auto if mean == "auto" else float(mean)
 
     # Trajectory over the whole LAS so pressure points outside the window can be placed.
     traj_ok = full.SDEV.notna() & full.HAZI.notna()
@@ -188,9 +219,9 @@ def run(cfg, progress=None, realizations=None):
 
     return dict(df=df, flags=flags, conv=conv, summary=summary, samples=samples,
                 params=pd.DataFrame(params), endpoints=ep, endpoint_std=ep_std,
-                endpoints_auto=ep_auto, props=props, props_std=props_std, archie=archie,
-                water=water, pressure=pres, core=core, hc_column=hc_column,
-                shale_check=shale_consistency(df, cfg), settings=s, las=las,
+                shale_sets=sets, zone_idx=zidx, props=props, props_std=props_std,
+                archie=archie, water=water, pressure=pres, core=core, hc_column=hc_column,
+                shale_check=shale_consistency(df, sets), settings=s, las=las,
                 elapsed=time.time() - t0, cfg=cfg)
 
 

@@ -54,7 +54,10 @@ likelihood). The spread of the 1,000 solutions gives the P10/P50/P90 bands and t
 distribution of the hydrocarbon column.
 
 **Calibration from the data** (all can be overridden in the config):
-- Shale end-points: medians over the thick base shale (10,160-10,200 ft).
+- Shale end-points: zoned by depth. Sequences 1-2 use the upper shale (9,650-9,690 ft) and
+  the base uses the base shale (10,160-10,200 ft). The base shale is denser (2.39 vs. about
+  2.35 g/cc), and using it everywhere biased sand porosity about +0.04 high against core.
+  Each realization shifts all zones by one draw, and rho_sh has a wide 0.03 g/cc std.
 - Clean-sand GR: 3rd percentile of GR.
 - Rw and Rmf: from the water sand, with Sw = Sxo = 1 in the laminated model.
 - Hydrocarbon density: oil gradient from formation-tester points, converted to TVD with
@@ -67,8 +70,10 @@ distribution of the hydrocarbon column.
   neutron mixing) and on the stated input uncertainties.
 - Sxo uses AT10 as if it measured resistivity parallel to bedding. In a 50° well through
   anisotropic laminations this is an approximation.
-- Inverted sand porosity runs about +0.04 above core porosity, and core Sw is much higher
-  than log Sw (core plugs look flushed: core So is low). See `summary.md`.
+- Plugs with grain density above 2.70 g/cc likely contain clay or mica and are not clean
+  sand laminae. The report compares the inversion with all plugs and with representative
+  plugs separately. Core Sw is much higher than log Sw (core plugs look flushed: core So is
+  low). See `summary.md`.
 
 ## Layout
 

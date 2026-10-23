@@ -138,15 +138,18 @@ def solve(obs, p, prior, s, x0, iterations=40, tol=1e-8):
 
 
 def sample_parameters(means, stds, k, rng, fixed):
-    """Draw k parameter sets. Log-normal for resistivities, normal otherwise."""
+    """Draw k parameter sets. Log-normal for resistivities, normal otherwise.
+
+    A mean may be a scalar or an array over depths (zoned shale end-points). Each
+    realization draws one standard-normal shift per parameter and applies it at
+    every depth, so the result has shape (k, 1) or (k, depths).
+    """
     p = {}
     for name, mean in means.items():
         sd = stds.get(name, 0.0)
-        if name in LOG_PARAMS:
-            draw = mean * np.exp(rng.normal(0.0, sd, k))
-        else:
-            draw = rng.normal(mean, sd, k)
-        p[name] = draw[:, None]
+        z = rng.normal(0.0, 1.0, (k, 1))
+        mean = np.asarray(mean, float)[None, ...] if np.ndim(mean) else mean
+        p[name] = mean * np.exp(sd * z) if name in LOG_PARAMS else mean + sd * z
     p["rho_hc"] = np.clip(p["rho_hc"], 0.05, 1.0)
     p["hi_hc"] = np.clip(p["hi_hc"], 0.05, 1.1)
     p["gr_shale"] = np.maximum(p["gr_shale"], p["gr_sand"] + 5.0)
@@ -205,7 +208,8 @@ def _solve_chunk(logs, means, stds, archie, s, k, seed):
     pred = forward(csh, phi, sw, p)
     out.update(zip(("pred_rh", "pred_rv", "pred_rhob", "pred_nphi"), pred))
     out = {name: val.astype(np.float32) for name, val in out.items()}
-    return out, {name: p[name][:, 0] for name in means}
+    # One value per realization (depth average for zoned end-points), for sensitivity analysis.
+    return out, {name: p[name].mean(axis=1) for name in means}
 
 
 def run_monte_carlo(logs, means, stds, archie, s, progress=None):
