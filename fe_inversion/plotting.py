@@ -289,33 +289,42 @@ def csh_methods(r, path):
     plt.close(fig)
 
 
+def _fraction_axis(ax, label):
+    """0-1 track with a little room past each bound, so values at a bound stay visible."""
+    for b in (0.0, 1.0):
+        ax.axvline(b, color="#455A64", lw=0.8, ls="--", zorder=1)
+    ax.set(xlim=(-0.03, 1.05), xlabel=label)
+
+
 def inversion_tracks(r, path):
     df, conv, s = r["df"], r["conv"], r["summary"]
     d = df.index.values
     n_real = r["settings"]["realizations"]
-    fig, ax = _tracks(7, d, f"Joint laminated inversion, {n_real} Monte Carlo realizations "
+    method = "Two-step (Csh-Rss, then porosity-Sw)" if r["settings"].get("method", "sequential") == "sequential" \
+        else "Joint"
+    fig, ax = _tracks(7, d, f"{method} laminated inversion, {n_real} Monte Carlo realizations "
                             "(bands = P10-P90)", width=2.7)
     _shade_uranium(ax[0], r)
     _band(ax[0], d, s, "csh")
     ax[0].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label=_prior_label(r))
-    ax[0].set(xlim=(0, 1), xlabel="Csh (v/v)")
+    _fraction_axis(ax[0], "Csh (v/v), bounded 0-1")
     ax[0].legend(loc="lower left")
 
     _band(ax[1], d, s, "phi")
-    ax[1].plot(conv.PHI_SS_D, d, color=C["conv"], lw=0.6, label="Density, sequential")
+    ax[1].plot(conv.PHI_SS_D, d, color=C["conv"], lw=0.6, label="Density, conventional")
     ax[1].scatter(df.CORE_POR, d, s=9, color=C["core"], zorder=5, label="Core")
     ax[1].set(xlim=(0, 0.45), xlabel="Sand porosity (v/v)")
     ax[1].legend(loc="lower left")
 
     _band(ax[2], d, s, "sw")
-    ax[2].plot(conv.SW_SS, d, color=C["conv"], lw=0.6, label="Archie, sequential")
+    ax[2].plot(conv.SW_SS, d, color=C["conv"], lw=0.6, label="Archie, conventional")
     ax[2].scatter(df.CORE_SW, d, s=9, color=C["core"], zorder=5, label="Core Sw")
-    ax[2].set(xlim=(0, 1), xlabel="Sand Sw (v/v)")
+    _fraction_axis(ax[2], "Sand Sw (v/v), bounded 0-1")
     ax[2].legend(loc="lower left")
 
     _band(ax[3], d, s, "sxo", color="#F48FB1", label="Sxo P10-P90")
     ax[3].plot(s.sw_p50, d, color=C["water"], lw=0.7, label="Sw P50")
-    ax[3].set(xlim=(0, 1), xlabel="Sand Sxo (v/v)")
+    _fraction_axis(ax[3], "Sand Sxo (v/v), bounded 0-1")
     ax[3].legend(loc="lower left")
 
     _band(ax[4], d, s, "rss")
