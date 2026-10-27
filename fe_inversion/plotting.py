@@ -15,6 +15,24 @@ plt.rcParams.update({"font.size": 9, "axes.titlesize": 10, "axes.labelsize": 9,
                      "legend.fontsize": 7.5, "figure.dpi": 110})
 
 
+SECTION_COLORS = ("#1565C0", "#2E7D32", "#C62828", "#6A1B9A")
+
+
+def _prior_label(r):
+    """Name of the Csh curve that biases the inversion."""
+    s = r["settings"]
+    if s.get("method", "sequential") == "sequential":
+        return f"{s['csh_spectral_curve']} Csh bias"
+    return "GR prior"
+
+
+def _section_index(r, depth):
+    idx = np.full(len(depth), -1)
+    for i, sec in enumerate(r["shale_sets"]):
+        idx[(depth >= sec["top"]) & (depth < sec["bottom"])] = i
+    return idx
+
+
 def _style(ax):
     ax.grid(True, color="#DDE3EA", lw=0.6)
     ax.set_axisbelow(True)
@@ -168,7 +186,15 @@ def crossplots(r, path):
               ylabel="RHOB (g/cc)", title="(b) Neutron-density (colored by GR)")
     fig.colorbar(sc, ax=ax[1], label="GR (gAPI)")
 
-    sc = ax[2].scatter(df.THOR, df.POTA, c=df.GR, s=5, cmap="copper_r", vmin=20, vmax=110)
+    sidx = _section_index(r, d)
+    for i, sec in enumerate(sets):
+        m = sidx == i
+        ax[2].scatter(df.THOR[m], df.POTA[m], s=5, color=SECTION_COLORS[i % 4], alpha=0.6, label=sec["name"])
+        ok = m & df.THOR.notna().values & df.POTA.notna().values
+        if ok.sum() > 10:  # each section's K-Th trend
+            b, a0 = np.polyfit(df.THOR[ok], df.POTA[ok], 1)
+            x = np.array([df.THOR[ok].min(), df.THOR[ok].max()])
+            ax[2].plot(x, a0 + b * x, color=SECTION_COLORS[i % 4], lw=1.5)
     for ratio in (3.5, 12, 25):
         k = np.linspace(0, 3, 10)
         ax[2].plot(k * ratio, k, "k--", lw=0.6)
@@ -176,8 +202,8 @@ def crossplots(r, path):
         ax[2].annotate(f"Th/K = {ratio:g}", (x, x / ratio), textcoords="offset points",
                        xytext=(-50, 4), fontsize=7)
     ax[2].set(xlim=(0, 25), ylim=(0, 3), xlabel="Thorium (ppm)", ylabel="Potassium (%)",
-              title="(c) K vs. Th (clay type)")
-    fig.colorbar(sc, ax=ax[2], label="GR (gAPI)")
+              title="(c) K vs. Th by section (lines: section trends)")
+    ax[2].legend(loc="upper left", fontsize=7)
 
     sc = ax[3].scatter(df.GR, df.RHOB, c=d, s=5, cmap="viridis_r")
     ax[3].set(xlabel="GR (gAPI)", ylabel="RHOB (g/cc)", title="(d) GR vs. bulk density")
@@ -255,7 +281,7 @@ def csh_methods(r, path):
     ax[2].set(xlim=(0, 1), xlabel="Csh (v/v)")
     ax[2].legend(loc="lower left")
     _band(ax[3], d, s, "csh")
-    ax[3].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label="GR prior (P50)")
+    ax[3].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label=f"{_prior_label(r)} (P50)")
     ax[3].set(xlim=(0, 1), xlabel="Csh (v/v), joint inversion")
     ax[3].legend(loc="lower left")
     _tops(ax, r["cfg"].get("tops", {}))
@@ -271,7 +297,7 @@ def inversion_tracks(r, path):
                             "(bands = P10-P90)", width=2.7)
     _shade_uranium(ax[0], r)
     _band(ax[0], d, s, "csh")
-    ax[0].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label="GR prior")
+    ax[0].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label=_prior_label(r))
     ax[0].set(xlim=(0, 1), xlabel="Csh (v/v)")
     ax[0].legend(loc="lower left")
 
@@ -451,6 +477,85 @@ def monte_carlo_plots(r, path):
     plt.close(fig)
 
 
+def section_calibration(r, path):
+    """Per section: bracketing objective, inversion vs. spectral-GR Csh, Rv vs. Rh."""
+    df, sets, centers = r["df"], r["shale_sets"], r["centers"]
+    d = df.index.values
+    spec_name = r["settings"]["csh_spectral_curve"]
+    n = len(sets)
+    fig, ax = plt.subplots(n, 3, figsize=(16, 4.6 * n), squeeze=False)
+    for i, sec in enumerate(sets):
+        br, col = sec["bracket"], SECTION_COLORS[i % 4]
+        for a in ax[i]:
+            _style(a)
+        # (1) bracketing objective over (Rsh_h, Rsh_v)
+        obj = np.where(np.isfinite(br["objective"]), br["objective"], np.nan)
+        im = ax[i, 0].pcolormesh(br["grid_v"], br["grid_h"], obj, cmap="viridis_r", shading="nearest")
+        ax[i, 0].plot(br["rsh_v0"], br["rsh_h0"], "w^", ms=9, mec="k", label="Shale bed readings")
+        ax[i, 0].plot(br["rsh_v"], br["rsh_h"], "r*", ms=14, mec="k", label="Chosen")
+        ax[i, 0].set(xscale="log", yscale="log", xlabel="Rsh_v, perpendicular (ohm.m)",
+                     ylabel="Rsh_h, parallel (ohm.m)",
+                     title=f"{sec['name']} ({sec['top']:.0f}-{sec['bottom']:.0f} ft): shale bracketing")
+        ax[i, 0].legend(loc="upper right", fontsize=7)
+        fig.colorbar(im, ax=ax[i, 0], label="Objective (RMS Csh disagreement + penalties)")
+
+        # (2) inversion Csh vs. spectral-GR Csh at thick-bed centers
+        use, cen = br["use"], br["is_center"]
+        spec = df[spec_name].values[use][cen]
+        csh_inv = br["csh"][cen]
+        csh_spec = petro.gr_index(spec, br["spec_sand"], br["spec_shale"])
+        ax[i, 1].scatter(csh_spec, csh_inv, s=6, color=col, alpha=0.5)
+        ax[i, 1].plot([0, 1], [0, 1], "k:", lw=1)
+        ax[i, 1].set(xlim=(-0.02, 1.02), ylim=(-0.02, 1.02),
+                     xlabel=f"Csh from {spec_name} = ({spec_name} - {br['spec_sand']:.1f}) / "
+                            f"({br['spec_shale']:.1f} - {br['spec_sand']:.1f})",
+                     ylabel="Csh from Rh-Rv inversion (no GR bias)",
+                     title=f"Thick-bed centers (n = {cen.sum()}): RMS {br['rms']:.2f}, r = {br['corr']:.2f}")
+
+        # (3) Rv vs. Rh: all samples vs. thick-bed centers, with the section trend of each
+        m = (d >= sec["top"]) & (d < sec["bottom"]) & (df.RH > 0).values & (df.RV > 0).values
+        mc = m & centers
+        ax[i, 2].scatter(df.RH[m & ~centers], df.RV[m & ~centers], s=5, color="#B0BEC5",
+                         label="Near bed boundaries")
+        ax[i, 2].scatter(df.RH[mc], df.RV[mc], s=6, color=col, alpha=0.7, label="Thick-bed centers")
+        for mask, ls, lab in ((m, "--", "all"), (mc, "-", "centers")):
+            if mask.sum() > 10:
+                b, a0 = np.polyfit(np.log10(df.RH[mask]), np.log10(df.RV[mask]), 1)
+                x = np.array([df.RH[m].min(), df.RH[m].max()])
+                ax[i, 2].plot(x, 10 ** a0 * x ** b, color="k", ls=ls, lw=1,
+                              label=f"Trend ({lab}): slope {b:.2f}")
+        ax[i, 2].plot(br["rsh_h"], br["rsh_v"], "r*", ms=13, mec="k", label="Chosen shale point")
+        ax[i, 2].plot([0.1, 100], [0.1, 100], "k:", lw=0.8)
+        ax[i, 2].set(xscale="log", yscale="log", xlim=(0.2, 20), ylim=(0.2, 100),
+                     xlabel="Rh, parallel (ohm.m)", ylabel="Rv, perpendicular (ohm.m)",
+                     title="Rv vs. Rh (log-log trend slopes)")
+        ax[i, 2].legend(loc="upper left", fontsize=7)
+    fig.suptitle("Per-section shale bracketing and Csh cross-check", fontsize=13, fontweight="semibold")
+    fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+
+
+def uncertainty_vs_csh(r, path):
+    """Width of the P10-P90 band against Csh: uncertainty should grow toward shale."""
+    s = r["summary"]
+    fig, ax = plt.subplots(1, 3, figsize=(15, 4.5))
+    bins = np.linspace(0, 1, 11)
+    mid = (bins[:-1] + bins[1:]) / 2
+    for a, (name, lab) in zip(ax, (("csh", "Csh"), ("phi", "Sand porosity"), ("sw", "Sand Sw"))):
+        _style(a)
+        width = s[f"{name}_p90"] - s[f"{name}_p10"]
+        a.scatter(s.csh_p50, width, s=3, color="#90A4AE", alpha=0.4)
+        med = [np.nanmedian(width[(s.csh_p50 >= lo) & (s.csh_p50 < hi)]) for lo, hi in zip(bins[:-1], bins[1:])]
+        a.plot(mid, med, "o-", color=C["inv"], lw=2, label="Median per Csh bin")
+        a.set(xlabel="Csh (P50)", ylabel=f"{lab} P90 - P10", xlim=(0, 1),
+              title=f"{lab} uncertainty vs. shale content")
+        a.legend(loc="upper left")
+    fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+
+
 def all_figures(r, out_dir):
     figs = {
         "01_log_composite.png": log_composite,
@@ -461,6 +566,8 @@ def all_figures(r, out_dir):
         "06_pressure_fluid_density.png": pressure_plot,
         "07_core_comparison.png": core_plots,
         "08_monte_carlo.png": monte_carlo_plots,
+        "09_section_calibration.png": section_calibration,
+        "10_uncertainty_vs_csh.png": uncertainty_vs_csh,
     }
     for name, fn in figs.items():
         if fn is pressure_plot and not r.get("pressure"):

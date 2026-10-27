@@ -25,6 +25,47 @@ def write_outputs(r, out):
     las.write(str(out / "results.las"), version=2.0)
 
 
+def _calibration_section(r):
+    """Per-section shale bracketing, spectral-GR cross-check and Rv-Rh trends."""
+    sets, df, centers = r["shale_sets"], r["df"], r["centers"]
+    s = r["settings"]
+    spec = s.get("csh_spectral_curve", "GR")
+    d = df.index.values
+    L = ["", f"## Section calibration (inversion method: {s.get('method', 'sequential')})", "",
+         f"Bed boundaries: {len(r['bed_idx']) - 1} beds; {centers.sum()} thick-bed center samples "
+         f"({centers.mean():.0%} of the interval) used for calibration and cross-checks. "
+         f"In each section Rsh_h and Rsh_v are bracketed around the thickest shale bed's readings; "
+         f"the chosen pair best matches the Rh-Rv inversion Csh to the {spec} Csh while the shale "
+         f"bed itself still reads Csh ~ 1.", "",
+         "| Section | Shale bed (ft) | Rsh_h start -> chosen | Rsh_v start -> chosen | "
+         f"Shale bed Csh | {spec} sand / shale | Sand / shale points | RMS Csh difference | Correlation |",
+         "|---|---|---|---|---|---|---|---|---|"]
+    for sec in sets:
+        b = sec["bracket"]
+        L.append(f"| {sec['name']} {sec['top']:.0f}-{sec['bottom']:.0f} | {sec['reference'][0]:.1f}-"
+                 f"{sec['reference'][1]:.1f} ({sec['reference'][1] - sec['reference'][0]:.1f} ft) | "
+                 f"{b['rsh_h0']:.3f} -> {b['rsh_h']:.3f} | {b['rsh_v0']:.3f} -> {b['rsh_v']:.3f} | "
+                 f"{b['ref_csh']:.2f} | {b['spec_sand']:.2f} / {b['spec_shale']:.2f} | "
+                 f"{b['n_sand']} / {b['n_shale']} | {b['rms']:.3f} | {b['corr']:.2f} |")
+    names = list(sets[0]["bracket"]["spectral"])
+    L += ["", "Agreement of the inversion Csh with Csh from each gamma-ray curve (thick-bed centers; "
+          "end-points read where the inversion gives Csh ~ 0 and ~ 1). GR includes uranium; "
+          "THOR, POTA and CGR do not.", "",
+          "| Section | " + " | ".join(f"{n} RMS / r" for n in names) + " |",
+          "|---" * (len(names) + 1) + "|"]
+    for sec in sets:
+        sp = sec["bracket"]["spectral"]
+        L.append(f"| {sec['name']} | " + " | ".join(f"{sp[n]['rms']:.3f} / {sp[n]['corr']:.2f}" for n in names) + " |")
+    L += ["", "Rv-Rh trend (slope of log10 Rv against log10 Rh): all samples vs. thick-bed centers only.", "",
+          "| Section | Slope, all samples | Slope, thick-bed centers | Samples / centers |", "|---|---|---|---|"]
+    for sec in sets:
+        m = (d >= sec["top"]) & (d < sec["bottom"]) & (df.RH > 0).values & (df.RV > 0).values
+        mc = m & centers
+        slope = lambda k: np.polyfit(np.log10(df.RH[k]), np.log10(df.RV[k]), 1)[0] if k.sum() > 10 else np.nan
+        L.append(f"| {sec['name']} | {slope(m):.2f} | {slope(mc):.2f} | {m.sum()} / {mc.sum()} |")
+    return L
+
+
 def write_report(r, out, figures):
     ep, eps, sets = r["endpoints"], r["endpoint_std"], r["shale_sets"]
     pr, prs = r["props"], r["props_std"]
@@ -43,6 +84,7 @@ def write_report(r, out, figures):
     for k in workflow.ZONED:
         L.append(f"| {k} | " + " | ".join(f"{s['used'][k]:.4g}" for s in sets)
                  + f" | {std_txt(k, eps[k])} |")
+    L += _calibration_section(r)
     L += ["", "## Other end-points and properties", "",
           "| Parameter | Value | Std | Source |", "|---|---|---|---|"]
     for k, v in {**{k: v for k, v in ep.items() if k not in workflow.ZONED}, **pr}.items():

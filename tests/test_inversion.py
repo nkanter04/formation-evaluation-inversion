@@ -81,3 +81,57 @@ def test_tvd_vertical_and_inclined():
     assert np.allclose(petro.tvd_minimum_curvature(md, [0, 0, 0], [0, 0, 0]), md)
     t = petro.tvd_minimum_curvature(md, [60, 60, 60], [10, 10, 10])
     assert np.allclose(t, md * 0.5)
+
+
+S2 = dict(S, sigma_log_rh=0.05, sigma_log_rv=0.10, sigma_log_rss=0.10)
+
+
+def _fd_jacobian(fn, u, h=1e-6):
+    J = np.empty(fn(u)[0].shape + (u.shape[-1],))
+    for j in range(u.shape[-1]):
+        du = np.zeros(u.shape[-1])
+        du[j] = h
+        J[..., j] = (fn(u + du)[0] - fn(u - du)[0]) / (2 * h)
+    return J
+
+
+def test_stage_jacobians_match_finite_differences():
+    rng = np.random.default_rng(1)
+    u = rng.normal(0, 1.5, (3, 6, 2))
+    obs1 = dict(log_rh=rng.normal(0, 1, (3, 6)), log_rv=rng.normal(1, 1, (3, 6)))
+    obs1["log_rv"][0, 0] = np.nan
+    prior = dict(csh=rng.uniform(0, 1, (3, 6)))
+    for pr in (prior, None):
+        fn = lambda u: inversion._res_stage1(u, obs1, P, pr, S2)
+        np.testing.assert_allclose(fn(u)[1], _fd_jacobian(fn, u), atol=1e-6)
+    obs2 = dict(rhob=rng.normal(2.3, .1, (3, 6)), nphi=rng.normal(.3, .05, (3, 6)),
+                log_rss=rng.normal(1, 1, (3, 6)))
+    csh = rng.uniform(0, 0.9, (3, 6))
+    fn = lambda u: inversion._res_stage2(u, obs2, P, csh, S2)
+    np.testing.assert_allclose(fn(u)[1], _fd_jacobian(fn, u), atol=1e-6)
+
+
+def test_sequential_steps_recover_noise_free_synthetic():
+    csh = np.array([[0.1, 0.3, 0.5, 0.2, 0.7]])
+    phi = np.array([[0.30, 0.25, 0.22, 0.28, 0.20]])
+    sw = np.array([[0.15, 0.40, 0.9, 0.25, 0.7]])
+    rh, rv, rhob, nphi = inversion.forward(csh, phi, sw, P)
+    obs = dict(log_rh=np.log(rh), log_rv=np.log(rv))
+    x0 = inversion.stage1_start(obs["log_rh"], obs["log_rv"], P, np.full_like(csh, 0.5))
+    c, rss, _, _ = inversion.solve_stage1(obs, P, None, S2, x0, 60)
+    np.testing.assert_allclose(c, csh, atol=0.01)
+    true_rss = petro.archie_rt(P["rw"], phi, sw, P["a"], P["m"], P["n"])
+    np.testing.assert_allclose(np.log(rss), np.log(true_rss), atol=0.05)
+    obs2 = dict(rhob=rhob, nphi=nphi, log_rss=np.log(rss))
+    x0 = np.stack([np.full_like(csh, 0.25), np.full_like(csh, 0.5)], -1)
+    ph, s_w, _, _ = inversion.solve_stage2(obs2, P, c, S2, x0, 80)
+    np.testing.assert_allclose(ph, phi, atol=0.02)
+    np.testing.assert_allclose(s_w, sw, atol=0.05)
+
+
+def test_stage1_keeps_csh_within_bounds_in_pure_shale():
+    # Readings at the shale point: the closed form is singular; least squares must stay in [0, 1].
+    obs = dict(log_rh=np.log(np.full((1, 4), P["rsh_h"])), log_rv=np.log(np.full((1, 4), P["rsh_v"] * 1.05)))
+    x0 = inversion.stage1_start(obs["log_rh"], obs["log_rv"], P, np.full((1, 4), 0.9))
+    c, _, _, _ = inversion.solve_stage1(obs, P, None, S2, x0, 60)
+    assert (c >= 0).all() and (c <= 1).all() and c.min() > 0.9

@@ -4,7 +4,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from . import inversion, io, petro
+from . import beds, calibration, inversion, io, petro
 
 
 def _zone(df, interval):
@@ -17,21 +17,44 @@ def _value(entry, auto_value):
     return (auto_value if mean == "auto" else float(mean)), float(std)
 
 
-ZONED = ("gr_shale", "rho_sh", "nphi_sh", "rsh_h", "rsh_v", "phi_sh")
+ZONED = ("gr_shale", "rho_sh", "nphi_sh", "rsh_h", "rsh_v", "phi_sh", "spec_sand", "spec_shale")
 
 
-def shale_sets(df, cfg, props):
-    """Shale end-points of every shale zone, estimated from its reference interval."""
+def detect_beds(df, bcfg):
+    """Bed boundaries from log10(Rv) and thorium gradients, and the thick-bed center mask."""
+    d = df.index.values
+    idx = beds.boundaries(d, [np.log10(df.RV.where(df.RV > 0)), df.THOR],
+                          [bcfg["rv_log10_gradient"], bcfg["thor_gradient"]],
+                          bcfg["smooth_ft"], bcfg["min_spacing_ft"])
+    centers = beds.thick_bed_centers(d, idx, bcfg["min_thickness_ft"], bcfg["edge_ft"])
+    return idx, centers & (df.RH > 0).values & (df.RV > 0).values
+
+
+def shale_sets(df, cfg, props, idx, centers, s):
+    """Sections with their pure-shale reference bed, shale end-points and bracketed Rsh."""
     sets = []
-    for z in cfg["shale_zones"]:
-        sh = _zone(df, z["reference"])
+    d = df.index.values
+    spec_name = s["csh_spectral_curve"]
+    for z in cfg["sections"]:
+        top, bottom = float(z["top"]), float(z["bottom"])
+        ref = z.get("reference", "auto")
+        if ref == "auto":
+            ref = calibration.reference_shale(df, top, bottom, df[spec_name].values)
+        ref = tuple(float(v) for v in ref)
+        m = (d >= ref[0]) & (d < ref[1])
+        mc = m & centers if (m & centers).sum() >= 3 else m
+        sh = df[mc]
         auto = {"gr_shale": float(sh.GR.median()), "rho_sh": float(sh.RHOB.median()),
-                "nphi_sh": float(sh.NPHI.median()), "rsh_h": float(sh.RH.median()),
-                "rsh_v": float(sh.RV.median())}
+                "nphi_sh": float(sh.NPHI.median())}
         # Shale porosity seen by the density log (Thomas-Stieber shale point).
         auto["phi_sh"] = float(petro.density_porosity(auto["rho_sh"], props["rho_ma"], props["rho_w"]))
-        sets.append(dict(name=z["name"], top=float(z["top"]), bottom=float(z["bottom"]),
-                         reference=tuple(z["reference"]), auto=auto, used={}))
+        sec = dict(name=z["name"], top=top, bottom=bottom, reference=ref)
+        br = calibration.bracket_section(df, sec, ref, centers, spec_name, s, cfg["bracketing"])
+        auto.update(rsh_h=br["rsh_h"], rsh_v=br["rsh_v"],
+                    spec_sand=br["spec_sand"], spec_shale=br["spec_shale"])
+        br["spectral"] = calibration.compare_spectral(df, br["use"], br["is_center"], br["csh"],
+                                                     cfg["bracketing"])
+        sets.append(dict(sec, auto=auto, used={}, bracket=br))
     return sets
 
 
@@ -194,6 +217,12 @@ def run(cfg, progress=None, realizations=None):
     d = cfg["data"]
     full, las = io.load_well(d["las"], cfg["curves"])
     df = full.loc[d["top"]:d["bottom"]].copy()
+    # Blank the start-up and end samples of Rh/Rv (the first feet read Rv = Rh in shale).
+    ok = (df.RH > 0) & (df.RV > 0)
+    if ok.any():
+        trim = d.get("rhrv_trim_ft", 0.0)
+        first, last = df.index[ok][0], df.index[ok][-1]
+        df.loc[(df.index < first + trim) | (df.index > last - trim), ["RH", "RV"]] = np.nan
     flags = io.quality_flags(df, cfg["zones"]["max_drho"])
     press = io.load_pressures(d["pressures"]) if d.get("pressures") else None
 
@@ -201,16 +230,22 @@ def run(cfg, progress=None, realizations=None):
     props, props_std = {}, {}
     for name in ("rho_ma", "nphi_ma", "rho_w", "hi_hc"):
         props[name], props_std[name] = _value(cfg["properties"][name], None)
-    sets = shale_sets(df, cfg, props)
+    s = dict(cfg["inversion"])
+    if realizations:
+        s["realizations"] = realizations
+    s["phi_prior"] = tuple(s["phi_prior"])
+    s["sw_prior"] = tuple(s["sw_prior"])
+    bed_idx, centers = detect_beds(df, cfg["beds"])
+    sets = shale_sets(df, cfg, props, bed_idx, centers, s)
     zidx = zone_index(df.index.values, sets)
     gr_sand_auto = float(np.nanpercentile(df.GR, cfg["zones"]["clean_sand_gr_percentile"]))
     ep, ep_std = {}, {}
     for name, (mean, std) in cfg["endpoints"].items():
         ep_std[name] = float(std)
         if name in ZONED:
-            for s in sets:
-                s["used"][name] = s["auto"][name] if mean == "auto" else float(mean)
-            ep[name] = np.array([s["used"][name] for s in sets])[zidx]
+            for sec in sets:
+                sec["used"][name] = sec["auto"][name] if mean == "auto" else float(mean)
+            ep[name] = np.array([sec["used"][name] for sec in sets])[zidx]
         else:
             ep[name] = gr_sand_auto if mean == "auto" else float(mean)
 
@@ -237,15 +272,11 @@ def run(cfg, progress=None, realizations=None):
     conv = conv.join(uran)
     core = core_fluid_density(df, conv.CSH_RES, ep["rho_sh"])
 
-    # ---- Monte Carlo joint inversion
-    s = dict(cfg["inversion"])
-    if realizations:
-        s["realizations"] = realizations
-    s["phi_prior"] = tuple(s["phi_prior"])
-    s["sw_prior"] = tuple(s["sw_prior"])
+    # ---- Monte Carlo inversion
     usable = ~flags.NO_RHRV.values
     logs = {
         "GR": df.GR.values,
+        "SPEC": df[s["csh_spectral_curve"]].values,
         "RH": np.where(usable, df.RH.values, np.nan),
         "RV": np.where(usable, df.RV.values, np.nan),
         "RHOB": np.where(flags.BAD_RHOB.values, np.nan, df.RHOB.values),
@@ -271,13 +302,16 @@ def run(cfg, progress=None, realizations=None):
 
     return dict(df=df, flags=flags, conv=conv, summary=summary, samples=samples,
                 params=pd.DataFrame(params), endpoints=ep, endpoint_std=ep_std,
-                shale_sets=sets, zone_idx=zidx, props=props, props_std=props_std,
+                shale_sets=sets, zone_idx=zidx, bed_idx=bed_idx, centers=centers, props=props, props_std=props_std,
                 archie=archie, water=water, pressure=pres, core=core, hc_column=hc_column,
                 shale_check=shale_consistency(df, sets), uranium=uran_info, settings=s, las=las,
                 elapsed=time.time() - t0, cfg=cfg)
 
 
 def zone_intervals(cfg, depth):
-    tops = sorted(cfg.get("tops", {}).items(), key=lambda kv: kv[1])
+    if "sections" in cfg:
+        tops = [(z["name"], float(z["top"])) for z in cfg["sections"]]
+    else:
+        tops = sorted(cfg.get("tops", {}).items(), key=lambda kv: kv[1])
     bounds = [t for _, t in tops] + [float(depth[-1]) + 1e-6]
     return {name: (bounds[i], bounds[i + 1]) for i, (name, _) in enumerate(tops)}

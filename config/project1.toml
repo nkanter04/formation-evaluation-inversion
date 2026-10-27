@@ -8,6 +8,7 @@ pressures = "C:/Users/nkant/OneDrive/The University of Texas at Austin/Fall 2026
 top = 9600.0
 bottom = 10200.0
 output_dir = "outputs/project1"
+rhrv_trim_ft = 4.0           # blank Rh/Rv this close to the ends of that log (tool start-up)
 
 # LAS mnemonic for each standard curve name used by the program.
 [curves]
@@ -33,32 +34,56 @@ CORE_SW = "CORESW"
 CORE_SO = "CORESO"
 CORE_RHOG = "CORERHOG"
 
-# Formation tops drawn on the plots (from the HW 1 report).
-[tops]
-"Sequence 1 (shale + HC)" = 9600.0
-"Sequence 2 (HC + water)" = 9825.0
-"Base shale" = 10158.0
-
 [zones]
 water = [10045.0, 10125.0]   # water-bearing sand: Rw and Rmf calibration
 clean_sand_gr_percentile = 3 # GR percentile taken as clean sand
 max_drho = 0.05              # |DRHO| above this flags bad density data
 representative_plug_max_rhog = 2.70  # plugs with heavier grain density likely contain clay
 
-# Shale end-points vary with depth: each depth range takes its shale properties
-# (GR, RHOB, NPHI, Rh, Rv medians) from its own reference shale. The base shale is
-# denser (2.39 g/cc) than the shales higher up (about 2.35 g/cc).
-[[shale_zones]]
-name = "Upper shale (Sequences 1-2)"
+# Three sections bracketed by GR trend. Sections 1 and 2 are fining-upward cycles
+# (GR falls downward); section 3 has the opposite trend (GR rises to the base shale).
+# Each section gets its own pure-shale reference: "auto" = thickest shale bed in the
+# section, or give an interval such as [10160.0, 10200.0]. Its Rh and Rv start the
+# shale-resistivity bracketing; its GR, RHOB and NPHI are the shale end-points.
+[[sections]]
+name = "Section 1"
 top = 9600.0
-bottom = 10158.0
-reference = [9650.0, 9690.0]
+bottom = 9825.0
+reference = "auto"
 
-[[shale_zones]]
-name = "Base shale"
-top = 10158.0
+[[sections]]
+name = "Section 2"
+top = 9825.0
+bottom = 10080.0
+reference = "auto"
+
+[[sections]]
+name = "Section 3"
+top = 10080.0
 bottom = 10200.0
-reference = [10160.0, 10200.0]
+reference = "auto"
+
+# Bed boundaries and thick-bed center points. Readings near boundaries average both
+# beds, so calibration and cross-checks use only centers of thick beds.
+[beds]
+rv_log10_gradient = 0.10     # boundary where |d log10(Rv)/dz| peaks above this (per ft)
+thor_gradient = 1.2          # or where |d Th/dz| peaks above this (ppm per ft)
+smooth_ft = 0.75             # smoothing before differentiating
+min_spacing_ft = 1.0         # boundaries closer than this are merged
+min_thickness_ft = 3.0       # thinner beds are not used for calibration
+edge_ft = 1.0                # samples this close to a boundary are not centers
+
+# Shale-resistivity bracketing in each section (thick-bed centers only).
+[bracketing]
+factor_min = 0.6             # scan Rsh_h and Rsh_v from 0.6x to 1.6x the shale bed's readings
+factor_max = 1.6
+steps = 13
+sand_max = 0.1               # inversion Csh at or below this marks clean sand
+shale_min = 0.9              # at or above this marks pure shale
+min_points = 5               # fewer sand/shale points: fall back to GR percentiles
+shale_penalty = 2.0          # penalty when the reference shale reads Csh below shale_min
+fit_weight = 0.05            # penalty per noise unit (above 1) that Rsh moves away from the shale bed readings
+min_span_fraction = 0.25     # sand and shale spectral GR must differ by this share of its range
 
 # Uranium is not tied to clay, so where it is high the GR over-reads Csh.
 [uranium]
@@ -84,9 +109,9 @@ hi_hc = [0.9, 0.1]           # hydrogen index of hydrocarbon
 rw = ["auto", 0.15]          # ohm.m at formation temperature (relative std)
 rmf = ["auto", 0.20]         # ohm.m (relative std)
 
-# Shale and clean-sand end-points: "auto" = median over each zone's reference shale.
-# A number instead of "auto" applies to every shale zone. Each Monte Carlo
-# realization shifts all zones by the same draw from the standard deviation.
+# Shale and clean-sand end-points: "auto" = estimated per section (reference shale
+# and bracketing). A number instead of "auto" applies to every section. Each Monte
+# Carlo realization shifts all sections by the same draw from the standard deviation.
 [endpoints]
 gr_sand = ["auto", 4.0]
 gr_shale = ["auto", 6.0]
@@ -95,22 +120,28 @@ nphi_sh = ["auto", 0.02]
 rsh_h = ["auto", 0.10]       # relative std
 rsh_v = ["auto", 0.15]       # relative std
 phi_sh = ["auto", 0.02]      # density porosity of shale laminae (Thomas-Stieber shale point)
+spec_sand = ["auto", 0.6]    # spectral GR at Csh = 0, units of csh_spectral_curve (ppm for THOR)
+spec_shale = ["auto", 0.8]   # spectral GR at Csh = 1
 
 [pressure]
 hc_interval = [9725.0, 9890.0]   # points used for the hydrocarbon gradient
 water_interval = [10040.0, 10080.0]
 
 [inversion]
+method = "sequential"        # "sequential": Csh-Rss from Rh/Rv, then porosity-Sw; "joint": all at once
+csh_spectral_curve = "THOR"  # uranium-free Csh bias: THOR, POTA or CGR (GR includes uranium)
 realizations = 1000
 seed = 385
 chunk = 25                 # realizations per parallel job (memory control)
 workers = 0                # parallel processes, 0 = all CPU cores but one, 1 = serial
 screen_iterations = 12     # short solves from two starting Sw values
 iterations = 30            # refinement of the better start
-csh_prior_std = 0.15       # trust in the GR-derived Csh used as prior
+csh_prior_std = 0.15       # trust in the spectral-GR Csh used to bias the inversion
 phi_prior = [0.25, 0.12]   # weak prior on sand porosity
 sw_prior = [0.6, 0.5]      # weak prior on sand water saturation
-sigma_log_r = 0.08         # Rh, Rv measurement error (natural-log units, ~8%)
+sigma_log_rh = 0.05        # Rh measurement error (natural-log units, ~5%)
+sigma_log_rv = 0.10        # Rv is noisier than Rh (fewer coils), ~10%
+sigma_log_rss = 0.10       # step 2: misfit allowed between Archie and step-1 Rss
 sigma_rhob = 0.02          # g/cc
 sigma_nphi = 0.025         # v/v
 shale_mask = 0.95          # sand properties are undefined above this Csh
