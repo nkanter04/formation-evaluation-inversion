@@ -24,6 +24,7 @@ RT = "AT90"            # deepest induction
 POTA = "POTA"
 THOR = "HTHO"
 URAN = "HURA"
+CGR = "HCGR"           # computed (uranium-free) GR from thorium + potassium
 SDEV = "SDEV"
 HAZI = "HAZI"
 CORE_POR = "COREPOR"
@@ -58,6 +59,14 @@ name = "Base shale"
 top = 10158.0
 bottom = 10200.0
 reference = [10160.0, 10200.0]
+
+# Uranium is not tied to clay, so where it is high the GR over-reads Csh.
+[uranium]
+u_max_ppm = "auto"           # abnormal uranium above this; "auto" = median + k * MAD
+u_mad_k = 3.0
+max_csh_inflation = 0.15     # flag where Csh(GR) - Csh(uranium-free CGR) exceeds this
+min_interval_ft = 0.5        # shorter flagged runs are ignored
+merge_gap_ft = 1.0           # flagged runs closer than this are merged
 
 [archie]
 a = 1.0

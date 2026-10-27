@@ -42,6 +42,22 @@ def _tops(axes, tops, label_ax=-1):
                             fontsize=7, va="center", color="#455A64")
 
 
+U_SHADES = {"anomaly": ("#7E57C2", 0.22, "Abnormal uranium (GR unreliable)"),
+            "inflation": ("#EC407A", 0.35, "Uranium inflates GR Csh")}
+
+
+def _shade_uranium(ax, r):
+    """Shade depth intervals where uranium makes the GR an unreliable shale indicator."""
+    u = r.get("uranium")
+    if not u:
+        return
+    for kind in ("inflation", "anomaly"):  # anomaly drawn last, on top
+        color, alpha, label = U_SHADES[kind]
+        for i, (a, b) in enumerate(u["intervals"][kind]):
+            ax.axhspan(a, b, color=color, alpha=alpha, lw=0, zorder=0,
+                       label=label if i == 0 else None)
+
+
 def _band(ax, depth, s, name, color=C["band"], label="P10-P90", scale=1.0):
     ax.fill_betweenx(depth, s[f"{name}_p10"] * scale, s[f"{name}_p90"] * scale,
                      color=color, alpha=0.35, lw=0, label=label)
@@ -216,20 +232,32 @@ def crossplots(r, path):
 def csh_methods(r, path):
     df, conv, s = r["df"], r["conv"], r["summary"]
     d = df.index.values
-    fig, ax = _tracks(3, d, "Shale concentration: conventional methods vs. inversion", width=3.2)
-    ax[0].plot(conv.CSH_GR, d, color=C["gr"], lw=0.8, label="GR linear")
-    ax[0].plot(conv.CSH_LARIONOV, d, color="#81C784", lw=0.8, label="GR Larionov (Tertiary)")
-    ax[0].plot(conv.CSH_ND, d, color=C["rhob"], lw=0.8, label="Neutron-density")
-    ax[0].set(xlim=(0, 1), xlabel="Csh (v/v)")
+    fig, ax = _tracks(4, d, "Shale concentration: conventional methods vs. inversion", width=3.0)
+    for a in ax:
+        _shade_uranium(a, r)
+    u = r["uranium"]
+    ax[0].plot(df.URAN, d, color="#5E35B1", lw=0.8, label="Uranium")
+    ax[0].axvline(u["u_max"], color="#5E35B1", ls="--", lw=0.8,
+                  label=f"Abnormal above {u['u_max']:.1f} ppm")
+    ax[0].set(xlim=(0, 10), xlabel="Uranium (ppm)")
+    t = _twin(ax[0], (-0.2, 0.6), "Csh(GR) - Csh(CGR), uranium effect", C["gr"])
+    t.plot(conv.CSH_U_INFLATION, d, color=C["gr"], lw=0.6)
+    t.axvline(u["max_csh_inflation"], color=C["gr"], ls=":", lw=0.8)
     ax[0].legend(loc="lower left")
-    ax[1].plot(conv.CSH_RES, d, color=C["rv"], lw=0.8, label="Rh-Rv laminated (closed form)")
-    ax[1].plot(conv.CSH_GR, d, color=C["gr"], lw=0.6, alpha=0.6, label="GR linear")
+    ax[1].plot(conv.CSH_GR, d, color=C["gr"], lw=0.8, label="GR linear")
+    ax[1].plot(conv.CSH_LARIONOV, d, color="#81C784", lw=0.8, label="GR Larionov (Tertiary)")
+    ax[1].plot(conv.CSH_CGR, d, color="#5E35B1", lw=0.8, label="CGR (Th+K, uranium-free)")
+    ax[1].plot(conv.CSH_ND, d, color=C["rhob"], lw=0.8, label="Neutron-density")
     ax[1].set(xlim=(0, 1), xlabel="Csh (v/v)")
     ax[1].legend(loc="lower left")
-    _band(ax[2], d, s, "csh")
-    ax[2].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label="GR prior (P50)")
-    ax[2].set(xlim=(0, 1), xlabel="Csh (v/v), joint inversion")
+    ax[2].plot(conv.CSH_RES, d, color=C["rv"], lw=0.8, label="Rh-Rv laminated (closed form)")
+    ax[2].plot(conv.CSH_GR, d, color=C["gr"], lw=0.6, alpha=0.6, label="GR linear")
+    ax[2].set(xlim=(0, 1), xlabel="Csh (v/v)")
     ax[2].legend(loc="lower left")
+    _band(ax[3], d, s, "csh")
+    ax[3].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label="GR prior (P50)")
+    ax[3].set(xlim=(0, 1), xlabel="Csh (v/v), joint inversion")
+    ax[3].legend(loc="lower left")
     _tops(ax, r["cfg"].get("tops", {}))
     fig.savefig(path, bbox_inches="tight", dpi=160)
     plt.close(fig)
@@ -241,6 +269,7 @@ def inversion_tracks(r, path):
     n_real = r["settings"]["realizations"]
     fig, ax = _tracks(7, d, f"Joint laminated inversion, {n_real} Monte Carlo realizations "
                             "(bands = P10-P90)", width=2.7)
+    _shade_uranium(ax[0], r)
     _band(ax[0], d, s, "csh")
     ax[0].plot(s.csh_prior_p50, d, color=C["prior"], lw=0.7, ls="--", label="GR prior")
     ax[0].set(xlim=(0, 1), xlabel="Csh (v/v)")

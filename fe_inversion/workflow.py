@@ -129,6 +129,56 @@ def conventional(df, ep, archie, props, phi_sh):
     return out
 
 
+def flagged_intervals(depth, mask, min_len, merge_gap):
+    """Contiguous (top, bottom) depth ranges where `mask` is true."""
+    depth, mask = np.asarray(depth, float), np.asarray(mask, bool)
+    step = np.median(np.diff(depth))
+    runs, start = [], None
+    for d, m in zip(depth, mask):
+        if m and start is None:
+            start = d
+        elif not m and start is not None:
+            runs.append([start, prev + step])
+            start = None
+        prev = d
+    if start is not None:
+        runs.append([start, depth[-1] + step])
+    merged = []
+    for r in runs:
+        if merged and r[0] - merged[-1][1] < merge_gap:
+            merged[-1][1] = r[1]
+        else:
+            merged.append(r)
+    return [(a, b) for a, b in merged if b - a >= min_len]
+
+
+def uranium_analysis(df, ep, sets, zidx, ucfg):
+    """Flag depths where uranium makes the GR an unreliable shale indicator.
+
+    Two flags: abnormal uranium concentration (robust outlier above background),
+    and uranium inflating the GR Csh beyond the uranium-free (Th + K) CGR Csh.
+    """
+    out = pd.DataFrame(index=df.index)
+    u = df.URAN
+    med = float(u.median())
+    mad = 1.4826 * float((u - med).abs().median())
+    u_max = med + ucfg["u_mad_k"] * mad if ucfg["u_max_ppm"] == "auto" else float(ucfg["u_max_ppm"])
+    out["U_ANOMALY"] = u > u_max
+
+    cgr_sand = float(np.nanpercentile(df.CGR, 3))
+    cgr_shale = np.array([float(_zone(df, s["reference"]).CGR.median()) for s in sets])[zidx]
+    out["CSH_CGR"] = petro.gr_index(df.CGR, cgr_sand, cgr_shale)
+    out["CSH_U_INFLATION"] = petro.gr_index(df.GR, ep["gr_sand"], ep["gr_shale"]) - out.CSH_CGR
+    out["U_INFLATES_GR"] = out.CSH_U_INFLATION > ucfg["max_csh_inflation"]
+
+    args = (ucfg["min_interval_ft"], ucfg["merge_gap_ft"])
+    intervals = {"anomaly": flagged_intervals(df.index, out.U_ANOMALY, *args),
+                 "inflation": flagged_intervals(df.index, out.U_INFLATES_GR, *args)}
+    info = dict(u_background=med, u_mad=mad, u_max=u_max, cgr_sand=cgr_sand,
+                max_csh_inflation=ucfg["max_csh_inflation"], intervals=intervals)
+    return out, info
+
+
 def core_fluid_density(df, csh, rho_sh):
     """Apparent pore-fluid density at core depths (task 5)."""
     has_core = df.CORE_POR.notna().values
@@ -183,6 +233,8 @@ def run(cfg, progress=None, realizations=None):
     props["rmf"], props_std["rmf"] = _value(cfg["properties"]["rmf"], water["rmf"])
 
     conv = conventional(df, ep, archie, props, ep["phi_sh"])
+    uran, uran_info = uranium_analysis(df, ep, sets, zidx, cfg["uranium"])
+    conv = conv.join(uran)
     core = core_fluid_density(df, conv.CSH_RES, ep["rho_sh"])
 
     # ---- Monte Carlo joint inversion
@@ -221,7 +273,7 @@ def run(cfg, progress=None, realizations=None):
                 params=pd.DataFrame(params), endpoints=ep, endpoint_std=ep_std,
                 shale_sets=sets, zone_idx=zidx, props=props, props_std=props_std,
                 archie=archie, water=water, pressure=pres, core=core, hc_column=hc_column,
-                shale_check=shale_consistency(df, sets), settings=s, las=las,
+                shale_check=shale_consistency(df, sets), uranium=uran_info, settings=s, las=las,
                 elapsed=time.time() - t0, cfg=cfg)
 
 

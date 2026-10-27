@@ -43,6 +43,16 @@ def test_ternary_with_depth_varying_shale_point():
     np.testing.assert_allclose(vsh, 1.0, atol=1e-10)
 
 
+def test_flagged_intervals_merges_gaps_and_drops_short_runs():
+    from fe_inversion.workflow import flagged_intervals
+    depth = np.arange(0.0, 10.0, 0.25)
+    mask = np.zeros(depth.size, bool)
+    mask[4:8] = True    # 1.00-2.00 ft
+    mask[9:12] = True   # 2.25-3.00 ft, gap 0.25 ft -> merged with the run above
+    mask[30] = True     # single 0.25 ft sample -> dropped
+    assert flagged_intervals(depth, mask, min_len=0.5, merge_gap=1.0) == [(1.0, 3.0)]
+
+
 def test_zone_index_assigns_nearest_zone_outside_ranges():
     from fe_inversion.workflow import zone_index
     sets = [dict(top=9600.0, bottom=10158.0), dict(top=10158.0, bottom=10200.0)]

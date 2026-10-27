@@ -72,6 +72,24 @@ def write_report(r, out, figures):
           f"IQR {rho.quantile(0.25):.2f}-{rho.quantile(0.75):.2f} ({len(rho)} plugs).", "",
           "## Shale consistency", "", r["shale_check"].round(3).to_markdown(), ""]
 
+    u = r.get("uranium")
+    if u:
+        conv = r["conv"]
+        L += ["## Uranium: where the GR is unreliable for Csh", "",
+              f"Background uranium {u['u_background']:.2f} ppm (MAD {u['u_mad']:.2f}). "
+              f"Abnormal above {u['u_max']:.2f} ppm. The uranium effect is Csh from GR minus Csh "
+              f"from the uranium-free CGR (Th + K), flagged above {u['max_csh_inflation']:.2f}.", "",
+              "| Flag | Interval (ft MD) | Thickness (ft) | Max U (ppm) | Max uranium effect on Csh |",
+              "|---|---|---|---|---|"]
+        for kind, label in (("anomaly", "Abnormal uranium"), ("inflation", "Uranium inflates GR Csh")):
+            for a, b in u["intervals"][kind]:
+                m = (df.index >= a) & (df.index < b)
+                L.append(f"| {label} | {a:.1f}-{b:.1f} | {b - a:.1f} | {df.URAN[m].max():.1f} | "
+                         f"{conv.CSH_U_INFLATION[m].max():+.2f} |")
+        n = {k: sum(b - a for a, b in v) for k, v in u["intervals"].items()}
+        L += ["", f"Total flagged: {n['anomaly']:.1f} ft abnormal uranium, "
+              f"{n['inflation']:.1f} ft where uranium inflates the GR Csh.", ""]
+
     core = df[df.CORE_POR.notna()]
     if len(core):
         max_rhog = r["cfg"]["zones"].get("representative_plug_max_rhog", 9.9)
