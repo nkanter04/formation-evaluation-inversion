@@ -55,7 +55,10 @@ reference = "auto"
 name = "Section 2"
 top = 9825.0
 bottom = 10080.0
-reference = "auto"
+# Section 2 has no pure shale (its high-thorium beds read GR 74-84, NPHI 0.35-0.39),
+# so it borrows the nearest thick shale. Tested against 4 alternatives: lowest porosity
+# bias vs. core and best data fit; see the commit message for the comparison.
+reference = [9654.0, 9690.0]
 
 [[sections]]
 name = "Section 3"
