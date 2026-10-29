@@ -187,3 +187,12 @@ def test_oil_corrected_porosity():
     phi, rho_f = mh.oil_corrected_porosity(np.array([phid]), np.array([rs]), rw, archie, fluid, 30)
     assert abs(phi[0] - phi_t) < 1e-4
     assert abs(phid - phi_t) > 0.02   # the uncorrected density porosity is clearly off
+
+
+def test_fluid_and_hydrocarbon_density_match_hw6():
+    from fe_inversion import manual_hpv as mh
+    # HW 6 Problem 1 (h)-(i): rho_f 0.8595, rho_H 0.7686; Problem 2 (h): rho_f 0.4223.
+    rf = mh.fluid_density(0.15, 0.0893, 0.03, 0.14907)
+    assert abs(rf - 0.8595) < 5e-4
+    assert abs(mh.hydrocarbon_density(rf, 0.3927, 1.0) - 0.7686) < 5e-4
+    assert abs(mh.fluid_density(0.33, 0.2638, 0.095, 0.3068) - 0.4223) < 5e-4

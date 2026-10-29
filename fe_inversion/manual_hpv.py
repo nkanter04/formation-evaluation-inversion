@@ -73,6 +73,27 @@ def aquifer(aq, sh, rsh, archie, clip_csh=True):
                 phi_w=phi_w, rs_w=rs_w, rw=rw)
 
 
+def fluid_density(phi_d, csh, phi_d_sh, phi_s, rho_ma=2.65, rho_f_tool=1.0):
+    """Pore-fluid density of the sandstone (HW 6 part h).
+
+    rho_R  = phi_D + (1 - phi_D) rho_ma             bulk density behind PHID (tool fluid 1.0 g/cc)
+    rho_sh = phi_D,sh + (1 - phi_D,sh) rho_ma       shale density, same way
+    rho_s  = (rho_R - Csh rho_sh) / (1 - Csh)       sandstone density (laminated)
+    rho_f  = (rho_s - (1 - phi_s) rho_ma) / phi_s   fluid filling the sandstone pores
+    """
+    rho_r = np.asarray(phi_d, float) * rho_f_tool + (1 - np.asarray(phi_d, float)) * rho_ma
+    rho_sh = phi_d_sh * rho_f_tool + (1 - phi_d_sh) * rho_ma
+    rho_s = (rho_r - csh * rho_sh) / (1 - csh)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return (rho_s - (1 - phi_s) * rho_ma) / phi_s
+
+
+def hydrocarbon_density(rho_f, sw, rho_w):
+    """rho_f = Sw rho_w + (1 - Sw) rho_H solved for rho_H (HW 6 part i)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return (np.asarray(rho_f, float) - rho_w * np.asarray(sw, float)) / (1 - np.asarray(sw, float))
+
+
 def archie_sw(phi, rs, rw, archie):
     """Sw from Archie in the sandstone, capped at 1 (B5). NaN where Rs is undefined."""
     with np.errstate(divide="ignore", invalid="ignore"):

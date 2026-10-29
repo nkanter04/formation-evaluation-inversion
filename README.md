@@ -19,6 +19,14 @@ The PGE 358 HW 6 point-by-point HPV calculation runs separately (see
 python -m fe_inversion.manual_hpv
 ```
 
+The remaining Project 1 checks (core depth shift, hydrocarbon density from the logs, Sw-Sxo
+consistency, permeability vs. log porosity) read the main program's `results.csv`, so run
+them after it:
+
+```bash
+python -m fe_inversion.project_checks
+```
+
 Options: `--realizations N` changes the number of Monte Carlo realizations, and
 `--output DIR` changes where results go (default `outputs/project1`). 1,000 realizations
 take about a minute on 16 cores when plugged in; on battery Windows throttles the CPU and
@@ -38,6 +46,10 @@ Outputs:
 | `08_monte_carlo.png` | Hydrocarbon-column distributions and which inputs drive the uncertainty |
 | `09_section_calibration.png` | Per section: shale-resistivity bracketing, inversion vs. spectral-GR Csh, Rv-Rh trends |
 | `10_uncertainty_vs_csh.png` | Width of the P10-P90 bands against Csh |
+| `11_core_depth_shift.png` | Applied core shift and core-vs-log gamma-ray correlation (project_checks) |
+| `12_hydrocarbon_density.png` | Hydrocarbon density from the logs (HW 6 h-i) vs. the pressure gradient (project_checks) |
+| `13_sw_sxo_consistency.png` | Sxo vs. Sw (ratio method), bulk volume water, Buckles plot (project_checks) |
+| `14_permeability.png` | Core permeability vs. log porosity and Sw (project_checks) |
 | `results.csv`, `results.las` | All input curves, conventional results, and P10/P50/P90 of every output |
 | `summary.md` | Section calibration, end-points, Rw/Rmf, gradients, zone averages, HC column P10/P50/P90 |
 
@@ -117,6 +129,7 @@ fe_inversion/petro.py       deterministic petrophysics (Csh, porosity, Archie, T
 fe_inversion/beds.py        bed boundaries and thick-bed center points
 fe_inversion/calibration.py per-section shale bracketing and spectral-GR cross-check
 fe_inversion/manual_hpv.py  HW 6 point-by-point HPV (aquifer Rw, then Csh, porosity, Sw, HPV)
+fe_inversion/project_checks.py  depth shift, hydrocarbon density, Sw-Sxo, permeability checks
 fe_inversion/inversion.py   forward model, LM solver, two-step and joint methods, Monte Carlo
 fe_inversion/workflow.py    calibration and the end-to-end workflow
 fe_inversion/plotting.py    figures
