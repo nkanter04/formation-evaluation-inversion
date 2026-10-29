@@ -153,12 +153,20 @@ shale_mask = 0.95          # sand properties are undefined above this Csh
 # Equations: docs/manual_hpv_method.md. Uses the [archie] parameters above.
 [manual_hpv]
 interval = [9825.0, 10080.0]         # Section 2
-shale_point = [10189.0, 10191.0]     # pure shale: GR, density and neutron porosity (median)
+shale_point = [9654.0, 9690.0]       # pure shale: GR, density and neutron porosity (median). The
+                                     # upper shale (phiD 0.187) rather than the base shale (0.155): the
+                                     # base shale's low density porosity overcorrected phi_s by ~0.09
 aquifer = [10065.0, 10080.0]         # water sandstone, Sw = 1 (median)
 rsh = 0.89                           # parallel shale resistivity (ohm.m), or "shale_point" for the
                                      # shale point's own Rt. 0.89 = RH of high-GR bed centers in the
                                      # pay; the base shale's 0.60 leaves Rs undefined at 98% of the pay
 csh_method = "larionov"              # "linear" (HW 6 as given) or "larionov" (Tertiary)
+porosity_method = "oil_density"      # "hw6": RMS/average of corrected density and neutron;
+                                     # "oil_density": corrected density re-solved with
+                                     # rho_f = Sw*rho_w + (1-Sw)*rho_hc, iterated with Sw
+rho_ma = 2.65                        # g/cc, quartz
+rho_w = 1.05                         # g/cc, formation water
+rho_hc = 0.644                       # g/cc, oil, from the formation-pressure gradient
 rt_curve = "RH"                      # resistivity parallel to bedding
 density_porosity_curve = "PHID_SS"   # sandstone density porosity (2.65 / 1.0 g/cc)
 neutron_offset = 0.0                 # added to TNPH; 0 = treat TNPH as sandstone units

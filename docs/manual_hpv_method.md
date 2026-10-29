@@ -186,18 +186,20 @@ Settings are in `[manual_hpv]` in `config/project1.toml`. Outputs go to `outputs
 
 | Point | Depth (ft MD) | $\gamma$ (gAPI) | $\phi_D$ | $\phi_N$ (TNPH) | $R_t$ = RH (Ω·m) |
 |---|---|---|---|---|---|
-| Pure shale | 10,189–10,191 | 95.7 | 0.155 | 0.399 | 0.597 |
+| Pure shale (GR, $\phi_D$, $\phi_N$) | 9,654–9,690 | 94.6 | 0.187 | 0.436 | 0.703 (not used) |
 | Aquifer | 10,065–10,080 | 27.2 | 0.267 | 0.231 | 0.379 |
 
+- $R_{sh}$ = 0.89 Ω·m (change 2 below), not the shale point's own 0.703 Ω·m.
 - TNPH is used as sandstone units (no offset). The neutron reads 0.035 below density in the
   aquifer, attributed to residual (trapped) gas; the aquifer is taken as $S_w = 1$, so the
-  negative neutron-density $C_{sh,w}$ (−0.150) is set to 0.
-- Archie $a = 1$, $m = 2.3$, $n = 1.97$.
+  negative neutron-density $C_{sh,w}$ (−0.148) is set to 0.
+- Archie $a = 1$, $m = 2.3$, $n = 1.97$. Fluids: $\rho_{ma}$ = 2.65, $\rho_w$ = 1.05 and
+  $\rho_{hc}$ = 0.644 g/cc (oil, from the formation-pressure gradient).
 
-### Two changes from HW 6 as given, and why
+### Four changes from HW 6 as given, and why
 
-Run exactly as in HW 6 (linear GR, $R_{sh}$ = the shale point's 0.60 Ω·m), $R_s$ is undefined
-at **98 %** of the pay. $R_s$ needs $C_{sh} < R_{sh}/R_t$: in the pay $R_{sh}/R_t$ has a median of
+**Changes 1–2: sandstone resistivity.** Run exactly as in HW 6 (linear GR, $R_{sh}$ = the base
+shale's 0.60 Ω·m), $R_s$ is undefined at **98 %** of the pay. $R_s$ needs $C_{sh} < R_{sh}/R_t$: in the pay $R_{sh}/R_t$ has a median of
 0.44, but the linear GR gives 0.69 (diagnosis figure:
 `outputs/diagnostics/rs_undefined_diagnosis.png`). Uranium is not the cause: thorium and
 potassium fail the same way. So:
@@ -213,26 +215,63 @@ $$
 2. **$R_{sh}$ = 0.89 Ω·m**, the parallel resistivity of the high-GR bed centers inside the pay,
    instead of the base shale's 0.60 Ω·m.
 
-With both changes $R_s$ is undefined at only 25 of 1,021 samples (2 %).
+With both changes $R_s$ is undefined at only about 2 % of the samples.
 
-### Results
+**Changes 3–4: sandstone porosity.** With changes 1–2 only, $\phi_s$ read **0.094 above core**
+and did not correlate with it. Two causes:
+
+3. **Shale point for the density and neutron correction: the upper shale (9,654–9,690 ft)**
+   instead of the base shale. The correction
+   $\phi^{(c)} = (\phi - C_{sh}\,\phi_{sh})/(1 - C_{sh})$ *raises* porosity wherever the rock reads
+   more porous than the shale. The base shale's density porosity (0.155) is far below the
+   pay's, so every unit of $C_{sh}$ added porosity. The upper shale (0.187) is also the shale
+   the inversion uses for Section 2.
+
+4. **Oil-corrected density porosity in place of B3.** PHID assumes a 1.0 g/cc pore fluid, but
+   the pay holds oil, so density porosity reads high. The RMS average in B3 is a gas
+   correction and does not fix this: RMS vs. plain average changed the bias by only 0.002, and
+   the neutron (0.11 high even after correction) only adds error. Instead, the corrected
+   density porosity is re-solved with the actual pore fluid, HW 6 part (h) used in reverse:
+
+$$
+\rho_s = \rho_{ma} - \phi_D^{(c)}\,(\rho_{ma} - 1.0),
+\qquad
+\rho_f = S_w\,\rho_w + (1 - S_w)\,\rho_{hc},
+\qquad
+\phi_s = \frac{\rho_{ma} - \rho_s}{\rho_{ma} - \rho_f}
+$$
+
+   $S_w$ comes from B5 with this $\phi_s$, so the two are iterated (8 passes; it converges in
+   a few). Where $R_s$ is undefined, $S_w = 1$ is used. Set `porosity_method = "hw6"` in the
+   config to use B3 as given.
+
+| Porosity vs. core (60 plugs) | Bias | Bias, representative plugs | r |
+|---|---|---|---|
+| Changes 1–2 only | +0.094 | +0.075 | 0.00 |
+| + upper shale (3) | +0.038 | +0.031 | 0.52 |
+| **+ oil-corrected density (3 + 4)** | **+0.009** | **+0.004** | **0.56** |
+| Two-step inversion | +0.012 | +0.007 | 0.72 |
+
+"Representative" plugs have grain density ≤ 2.70 g/cc; heavier plugs likely contain clay or mica.
+
+### Results (all four changes)
 
 | | Value |
 |---|---|
 | $R_w$ | 0.01547 Ω·m |
-| Valid samples | 976 of 1,021 (96 %); 25 with undefined $R_s$, 20 pure shale |
-| Mean $C_{sh}$, $\phi_s$, $S_w$ (valid samples) | 0.321, 0.317, 0.448 |
-| Hydrocarbon column, Section 2 | **17.5 ft TVD** (pay 9,825–10,005: 14.4 ft; 10,005–10,045: 2.5 ft; water sand: 0.7 ft) |
+| Valid samples | 964 of 1,021 (94 %); 27 pure shale, 26 with undefined $R_s$, 4 with $\phi_s \le 0$ |
+| Mean $C_{sh}$, $\phi_s$, $S_w$ in the pay (valid samples) | 0.414, 0.269, 0.403 |
+| Porosity vs. core | bias +0.009 (RMS 0.042, r = 0.56) |
+| Hydrocarbon column, Section 2 | **14.0 ft TVD** (pay 9,825–10,005: 11.2 ft; 10,005–10,045: 2.0 ft; water sand: 0.8 ft) |
 | Two-step inversion, same interval | 14.4 ft TVD |
 
 ### Known limitations
 
-- **Porosity reads high.** $\phi_s$ is 0.094 above core porosity on average, and does not
-  correlate with core (62 plugs). The inversion's bias is +0.012. Likely causes: the base
-  shale's density and neutron values used for the shale correction (the shales in the pay are
-  lighter), and the root-mean-square average, which is meant for gas, applied to oil.
-- **Water sand is not fully water.** Mean $S_w$ in the aquifer interval is 0.88, not 1, so it
-  contributes a spurious 0.7 ft. The 10,005–10,045 ft transition adds 2.5 ft that the
-  inversion puts at $S_w \approx 1$.
+- **Water sand is not fully water.** Mean $S_w$ in the aquifer interval is 0.87, not 1, so it
+  contributes about 0.8 ft that should be zero. The 10,005–10,045 ft transition adds 2.0 ft
+  that the inversion puts at $S_w \approx 1$.
+- **Mixed shale points.** The density and neutron shale values come from the upper shale and
+  $R_{sh}$ from the shale beds inside the pay. HW 6 uses one shale point for everything; with
+  the upper shale's own $R_t$ (0.703 Ω·m), $R_s$ is undefined at 23 % of the pay.
 - **Constant properties.** One shale point and one aquifer point are applied to the whole
   section.

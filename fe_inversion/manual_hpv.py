@@ -73,17 +73,55 @@ def aquifer(aq, sh, rsh, archie, clip_csh=True):
                 phi_w=phi_w, rs_w=rs_w, rw=rw)
 
 
-def point_by_point(logs, aq, sh, rsh, a_res, archie, csh_method="linear", shale_cutoff=0.95):
-    """Part B at every sample. `logs` has GR, PHID, NPHI, RT; returns all intermediate values."""
+def archie_sw(phi, rs, rw, archie):
+    """Sw from Archie in the sandstone, capped at 1 (B5). NaN where Rs is undefined."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sw = (archie["a"] * rw / (np.asarray(phi, float) ** archie["m"] * np.asarray(rs, float))) ** (1 / archie["n"])
+    return np.clip(sw, 0, 1)
+
+
+def oil_corrected_porosity(phi_dc, rs, rw, archie, fluid, iterations=8):
+    """Sandstone porosity from the shale-corrected density, with the actual pore fluid.
+
+    PHID assumes a 1.0 g/cc fluid. The sandstone density it implies is
+    rho_s = rho_ma - phi_dc * (rho_ma - 1.0); re-solving with
+    rho_f = Sw * rho_w + (1 - Sw) * rho_hc (HW 6 part h, in reverse) gives
+    phi_s = (rho_ma - rho_s) / (rho_ma - rho_f). Sw comes from Archie with that
+    phi_s, so the two are iterated. Where Rs is undefined, Sw = 1 is used.
+    """
+    rho_ma, rho_w, rho_hc = fluid["rho_ma"], fluid["rho_w"], fluid["rho_hc"]
+    rho_s = rho_ma - np.asarray(phi_dc, float) * (rho_ma - 1.0)
+    phi = np.asarray(phi_dc, float).copy()
+    sw = np.ones_like(phi)
+    for _ in range(iterations):
+        sw = np.where(np.isfinite(rs), np.nan_to_num(archie_sw(phi, rs, rw, archie), nan=1.0), 1.0)
+        rho_f = sw * rho_w + (1 - sw) * rho_hc
+        phi = (rho_ma - rho_s) / (rho_ma - rho_f)
+    return phi, rho_f
+
+
+def point_by_point(logs, aq, sh, rsh, a_res, archie, csh_method="linear", shale_cutoff=0.95,
+                   porosity_method="hw6", fluid=None):
+    """Part B at every sample. `logs` has GR, PHID, NPHI, RT; returns all intermediate values.
+
+    porosity_method "hw6": RMS of the corrected density and neutron where neutron < density,
+    else their average (B3). "oil_density": corrected density re-solved with the pore-fluid
+    density, iterated with Sw (see oil_corrected_porosity); needs `fluid`.
+    """
     out = pd.DataFrame(index=logs.index)
     out["GR"], out["PHID"], out["NPHI"], out["RT"] = logs.GR, logs.PHID, logs.NPHI, logs.RT
     out["CSH"] = gr_csh(logs.GR, aq["gr"], sh["gr"], a_res["csh_w"], csh_method)
     out["PHID_C"], out["PHIN_C"] = corrected_porosities(logs.PHID, logs.NPHI, out.CSH, sh)
-    out["PHI_S"], out["LIGHT_FLUID"] = sand_porosity(out.PHID_C, out.PHIN_C)
     out["RS"] = sand_resistivity(logs.RT, out.CSH, rsh)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        sw = (archie["a"] * a_res["rw"] / (out.PHI_S ** archie["m"] * out.RS)) ** (1 / archie["n"])
-    out["SW"] = np.clip(sw, 0, 1)
+    phi_hw6, out["LIGHT_FLUID"] = sand_porosity(out.PHID_C, out.PHIN_C)
+    if porosity_method == "hw6":
+        out["PHI_S"] = phi_hw6
+    elif porosity_method == "oil_density":
+        out["PHI_S"], out["RHO_F"] = oil_corrected_porosity(out.PHID_C.values, out.RS.values,
+                                                            a_res["rw"], archie, fluid)
+    else:
+        raise ValueError(f"unknown porosity_method {porosity_method!r}")
+    out["SW"] = archie_sw(out.PHI_S, out.RS, a_res["rw"], archie)
     out["SH"] = 1 - out.SW
     # Flags: why a sample has no HPV. Pure shale first, then the two equation failures.
     flag = np.full(len(out), "", dtype=object)
@@ -121,7 +159,9 @@ def run(cfg):
 
     top, bottom = m["interval"]
     logs = full.loc[top:bottom, ["GR", "PHID", "NPHI", "RT", "SDEV"]]
-    res = point_by_point(logs, aq, sh, rsh, a_res, archie, m["csh_method"], m["shale_cutoff"])
+    fluid = {k: float(m[k]) for k in ("rho_ma", "rho_w", "rho_hc") if k in m}
+    res = point_by_point(logs, aq, sh, rsh, a_res, archie, m["csh_method"], m["shale_cutoff"],
+                         m.get("porosity_method", "hw6"), fluid)
     res["DTVD"] = np.gradient(logs.index.values) * np.cos(np.radians(logs.SDEV.values))
     res["HC_COLUMN_CUM"] = np.cumsum(res.HPV * res.DTVD)
     return dict(res=res, shale=sh, rsh=rsh, aquifer=aq, a_res=a_res, archie=archie, cfg=cfg)
@@ -150,7 +190,7 @@ def write_outputs(r, out_dir):
     ax[1].set(xlim=(0, 1), xlabel=f"Csh ({m['csh_method']} GR)")
     ax[2].plot(res.PHID_C, d, color="#C62828", lw=0.7, label="Density, corrected")
     ax[2].plot(res.PHIN_C, d, color="#1565C0", lw=0.7, label="Neutron, corrected")
-    ax[2].plot(res.PHI_S.where(ok), d, color="k", lw=1.0, label="Sandstone porosity")
+    ax[2].plot(res.PHI_S.where(ok), d, color="k", lw=1.0, label=f"Sandstone porosity ({m.get('porosity_method', 'hw6')})")
     ax[2].set(xlim=(0, 0.5), xlabel="Porosity (v/v)")
     ax[2].legend(loc="lower left", fontsize=7)
     ax[3].plot(res.RT, d, color="#8E24AA", lw=0.7, label="Rt (parallel)")
@@ -180,7 +220,7 @@ def write_outputs(r, out_dir):
     valid = res.FLAG == ""
     L = ["# HW 6 point-by-point HPV", "",
          f"Interval {top:.0f}-{bottom:.0f} ft MD, {len(res)} samples. Archie a = {a['a']}, m = {a['m']}, "
-         f"n = {a['n']}. Csh method: {m['csh_method']} GR. Neutron offset added to "
+         f"n = {a['n']}. Csh method: {m['csh_method']} GR. Porosity method: {m.get('porosity_method', 'hw6')}. Neutron offset added to "
          f"TNPH: {m['neutron_offset']:+.3f}. Rt = {m['rt_curve']}.", "",
          "## Inputs", "",
          "| Point | Depth (ft) | GR | φD | φN | Rt (Ω·m) |", "|---|---|---|---|---|---|",

@@ -170,3 +170,20 @@ def test_manual_hpv_flags_undefined_rs():
     # Csh*Rt >= Rsh: the parallel model has no positive sandstone resistivity.
     assert np.isnan(mh.sand_resistivity(2.0, 0.6, 0.6))
     assert np.isfinite(mh.sand_resistivity(0.5, 0.6, 0.6))
+
+
+def test_oil_corrected_porosity():
+    from fe_inversion import manual_hpv as mh
+    fluid = dict(rho_ma=2.65, rho_w=1.05, rho_hc=0.644)
+    archie = dict(a=1.0, m=2.3, n=1.97)
+    # Undefined Rs -> Sw = 1: porosity is the density porosity re-solved with water at 1.05 g/cc.
+    phi, rho_f = mh.oil_corrected_porosity(np.array([0.30]), np.array([np.nan]), 0.02, archie, fluid)
+    assert np.isclose(rho_f[0], 1.05) and np.isclose(phi[0], 0.30 * 1.65 / 1.60)
+    # A synthetic oil sand: rebuild PHID from known phi and Sw, then recover them.
+    phi_t, sw_t, rw = 0.28, 0.25, 0.02
+    rho_s = 2.65 - phi_t * (2.65 - (sw_t * 1.05 + (1 - sw_t) * 0.644))
+    phid = (2.65 - rho_s) / 1.65
+    rs = rw / (phi_t ** 2.3 * sw_t ** 1.97)
+    phi, rho_f = mh.oil_corrected_porosity(np.array([phid]), np.array([rs]), rw, archie, fluid, 30)
+    assert abs(phi[0] - phi_t) < 1e-4
+    assert abs(phid - phi_t) > 0.02   # the uncorrected density porosity is clearly off
