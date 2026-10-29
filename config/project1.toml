@@ -148,3 +148,19 @@ sigma_log_rss = 0.10       # step 2: misfit allowed between Archie and step-1 Rs
 sigma_rhob = 0.02          # g/cc
 sigma_nphi = 0.025         # v/v
 shale_mask = 0.95          # sand properties are undefined above this Csh
+
+# PGE 358 HW 6 point-by-point HPV (python -m fe_inversion.manual_hpv).
+# Equations: docs/manual_hpv_method.md. Uses the [archie] parameters above.
+[manual_hpv]
+interval = [9825.0, 10080.0]         # Section 2
+shale_point = [10189.0, 10191.0]     # pure shale: GR, density and neutron porosity (median)
+aquifer = [10065.0, 10080.0]         # water sandstone, Sw = 1 (median)
+rsh = 0.89                           # parallel shale resistivity (ohm.m), or "shale_point" for the
+                                     # shale point's own Rt. 0.89 = RH of high-GR bed centers in the
+                                     # pay; the base shale's 0.60 leaves Rs undefined at 98% of the pay
+csh_method = "larionov"              # "linear" (HW 6 as given) or "larionov" (Tertiary)
+rt_curve = "RH"                      # resistivity parallel to bedding
+density_porosity_curve = "PHID_SS"   # sandstone density porosity (2.65 / 1.0 g/cc)
+neutron_offset = 0.0                 # added to TNPH; 0 = treat TNPH as sandstone units
+clip_aquifer_csh = true              # negative aquifer N-D Csh (residual gas) -> 0
+shale_cutoff = 0.95                  # no HPV where Csh is at or above this

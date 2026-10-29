@@ -12,6 +12,13 @@ pip install -r requirements.txt
 python -m fe_inversion --config config/project1.toml
 ```
 
+The PGE 358 HW 6 point-by-point HPV calculation runs separately (see
+[docs/manual_hpv_method.md](docs/manual_hpv_method.md)):
+
+```bash
+python -m fe_inversion.manual_hpv
+```
+
 Options: `--realizations N` changes the number of Monte Carlo realizations, and
 `--output DIR` changes where results go (default `outputs/project1`). 1,000 realizations
 take about a minute on 16 cores when plugged in; on battery Windows throttles the CPU and
@@ -109,6 +116,7 @@ fe_inversion/io.py          LAS / pressure loading, QC flags
 fe_inversion/petro.py       deterministic petrophysics (Csh, porosity, Archie, TVD, gradients)
 fe_inversion/beds.py        bed boundaries and thick-bed center points
 fe_inversion/calibration.py per-section shale bracketing and spectral-GR cross-check
+fe_inversion/manual_hpv.py  HW 6 point-by-point HPV (aquifer Rw, then Csh, porosity, Sw, HPV)
 fe_inversion/inversion.py   forward model, LM solver, two-step and joint methods, Monte Carlo
 fe_inversion/workflow.py    calibration and the end-to-end workflow
 fe_inversion/plotting.py    figures

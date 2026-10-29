@@ -135,3 +135,38 @@ def test_stage1_keeps_csh_within_bounds_in_pure_shale():
     x0 = inversion.stage1_start(obs["log_rh"], obs["log_rv"], P, np.full((1, 4), 0.9))
     c, _, _, _ = inversion.solve_stage1(obs, P, None, S2, x0, 60)
     assert (c >= 0).all() and (c <= 1).all() and c.min() > 0.9
+
+
+def _hw6(sh, aq, point, a, m, n):
+    from fe_inversion import manual_hpv as mh
+    import pandas as pd
+    archie = dict(a=a, m=m, n=n)
+    ar = mh.aquifer(aq, sh, sh["rt"], archie, clip_csh=False)
+    logs = pd.DataFrame([point], columns=["GR", "PHID", "NPHI", "RT"])
+    return ar, mh.point_by_point(logs, aq, sh, sh["rt"], ar, archie, "linear").iloc[0]
+
+
+def test_manual_hpv_reproduces_hw6_problem_1():
+    sh = dict(gr=130, phi_d=0.03, phi_n=0.30, rt=1.0)
+    aq = dict(gr=45, phi_d=0.19, phi_n=0.27, rt=0.53)
+    ar, r = _hw6(sh, aq, (20, 0.15, 0.15, 5.0), 1, 2.1, 1.9)   # solution uses GR = 20 at 6,660 ft
+    assert abs(ar["csh_w"] - 0.2963) < 1e-4 and abs(ar["rw"] - 0.02559) < 2e-4
+    assert abs(r.CSH - 0.0893) < 1e-4 and abs(r.PHI_S - 0.14907) < 1e-4
+    assert abs(r.SW - 0.3927) < 1e-3 and abs(r.HPV - 0.08244) < 2e-4
+
+
+def test_manual_hpv_reproduces_hw6_problem_2():
+    sh = dict(gr=102, phi_d=0.095, phi_n=0.36, rt=0.9)
+    aq = dict(gr=23, phi_d=0.295, phi_n=0.33, rt=0.47)
+    ar, r = _hw6(sh, aq, (35, 0.33, 0.19, 1.9), 1, 2.2, 1.9)
+    assert abs(ar["csh_w"] - 0.132) < 1e-3 and abs(ar["rw"] - 0.03706) < 2e-4
+    assert abs(r.CSH - 0.2638) < 2e-4 and abs(r.PHI_S - 0.3068) < 2e-4
+    assert abs(r.SW - 0.3786) < 1e-3 and abs(r.HPV - 0.14035) < 2e-4
+    assert r.LIGHT_FLUID
+
+
+def test_manual_hpv_flags_undefined_rs():
+    from fe_inversion import manual_hpv as mh
+    # Csh*Rt >= Rsh: the parallel model has no positive sandstone resistivity.
+    assert np.isnan(mh.sand_resistivity(2.0, 0.6, 0.6))
+    assert np.isfinite(mh.sand_resistivity(0.5, 0.6, 0.6))
