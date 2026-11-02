@@ -3,8 +3,8 @@
 # Any end-point set to "auto" is estimated from the zones below.
 
 [data]
-las = "C:/Users/nkant/OneDrive/The University of Texas at Austin/Fall 2026/PGE 385K - Adv. Formation Eval/PGE 385K - Homework Problems/Homework Projects/Homework Project No. 1/LASOut_ALL_W18.las"
-pressures = "C:/Users/nkant/OneDrive/The University of Texas at Austin/Fall 2026/PGE 385K - Adv. Formation Eval/PGE 385K - Homework Problems/Homework Projects/Homework Project No. 1/LAS_pressures.las"
+las = "C:/Users/nkant/OneDrive/The University of Texas at Austin/Fall 2026/PGE 385K - Adv. Formation Eval/PGE 385K - Homework Problems/Homework Projects/Homework Project No. 1/Data/LASOut_ALL_W18.las"
+pressures = "C:/Users/nkant/OneDrive/The University of Texas at Austin/Fall 2026/PGE 385K - Adv. Formation Eval/PGE 385K - Homework Problems/Homework Projects/Homework Project No. 1/Data/LAS_pressures.las"
 top = 9600.0
 bottom = 10200.0
 output_dir = "outputs/project1"
