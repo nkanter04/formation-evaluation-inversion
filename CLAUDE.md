@@ -39,8 +39,8 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
 
 - Depths are measured depth (MD) in ft. Project 1's well is about 51° deviated: pressure
   gradients and hydrocarbon columns must be in TVD (minimum curvature from SDEV/HAZI).
-- Neutron logs (TNPH in Project 1, CNCF in Project 2) are in **limestone units**. Quartz reads
-  about −0.035 to −0.04; do not treat them as sandstone units.
+- Neutron units differ by project. Project 1's TNPH is in **limestone units** (quartz reads
+  about −0.035). Project 2's CNCF is in **sandstone units** (confirmed by the user from class).
 - Archie parameters are set by each assignment: Project 1 a = 1, m = 2.3, n = 1.97;
   Project 2 a = 1, m = 2.1, n = 1.95.
 - Project 1 uses three depth sections, each with its own reference shale and bracketed

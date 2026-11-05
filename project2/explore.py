@@ -142,7 +142,7 @@ def fig_composite(df, core, sands, path):
         ax[2].semilogx(w[k].clip(0.2, 2000), w.index, color=col, lw=0.7, label=k)
     ax[2].set(xlim=(0.3, 300), title="Resistivity (Ω·m)")
     ax[3].plot(w.PHID, w.index, "r", lw=0.7, label="φD (2.65 / 1.0)")
-    ax[3].plot(w.NPHI, w.index, "b", lw=0.7, label="CNCF (v/v)")
+    ax[3].plot(w.NPHI, w.index, "b", lw=0.7, label="CNCF (v/v, sandstone units)")
     ax[3].fill_betweenx(w.index, w.PHID, w.NPHI, where=w.PHID > w.NPHI, color="gold", alpha=0.6, label="φD > φN")
     ax[3].plot(core.phi_3500, core.depth_log, "ko", ms=4, mfc="none", label="Core φ (3,500 psi)")
     ax[3].set(xlim=(0.6, -0.05), title="Porosity (v/v)")
@@ -178,10 +178,10 @@ def fig_shift(lags, scan, path):
 
 
 def nd_lines(ax):
-    """Approximate limestone-unit neutron response of sandstone, limestone and dolomite (Schlumberger CP-1)."""
+    """Approximate sandstone-unit neutron response of sandstone, limestone and dolomite (Schlumberger CP-1)."""
     phi = np.linspace(0, 0.45, 20)
-    for name, rho, off, col in [("Sandstone", 2.65, -0.04, "goldenrod"), ("Limestone", 2.71, 0.0, "steelblue"),
-                                ("Dolomite", 2.87, 0.05, "purple")]:
+    for name, rho, off, col in [("Sandstone", 2.65, 0.0, "goldenrod"), ("Limestone", 2.71, 0.04, "steelblue"),
+                                ("Dolomite", 2.87, 0.09, "purple")]:
         ax.plot(phi + off * (1 - phi / 0.45 * 0.6), rho - phi * (rho - 1.0), color=col, lw=1.2, label=name)
 
 
@@ -191,7 +191,7 @@ def fig_crossplots(df, sands, vsh, path):
     fig, ax = plt.subplots(2, 3, figsize=(17, 10.5))
     a = ax[0, 0]
     s = a.scatter(good.NPHI, good.ZDEN, c=good.GR, s=4, cmap="viridis")
-    nd_lines(a); a.text(0.02, 2.75, "Lithology lines approximate (limestone-unit neutron)", fontsize=7); a.set(xlim=(-0.05, 0.6), ylim=(2.8, 1.8), xlabel="CNCF (v/v, units to be confirmed)",
+    nd_lines(a); a.text(0.02, 2.75, "Lithology lines approximate (sandstone-unit neutron)", fontsize=7); a.set(xlim=(-0.05, 0.6), ylim=(2.8, 1.8), xlabel="CNCF (v/v, sandstone units)",
                        ylabel="ZDEN (g/cc)", title="(a) Neutron–density, colored by GR")
     a.legend(fontsize=7); plt.colorbar(s, ax=a, label="GR (API)")
     a = ax[0, 1]
@@ -322,9 +322,11 @@ def main():
          f"- {int(core.kh_3500_censored.sum())} plugs report kh > 9,999 md (censored).", "",
          "## Neutron units", "",
          f"In the cleanest part of the water sand ({aq.top:.0f}–{aq.base:.0f} ft, Vsh < 0.1): density φD = "
-         f"{phid_cl:.3f}, CNCF = {nphi_cl:.3f}. CNCF reads {phid_cl - nphi_cl:.3f} below φD, which is what a "
-         "limestone-calibrated neutron does in quartz sandstone (about −0.04); in sandstone units it would read at "
-         "or above φD. CNCF is therefore most likely in limestone units (to confirm with the chart / instructor).", "",
+         f"{phid_cl:.3f}, CNCF = {nphi_cl:.3f}. CNCF is in sandstone units (per the user, from class), so in "
+         "clean water-bearing quartz sand it should read close to φD; here it reads "
+         f"{phid_cl - nphi_cl:.3f} lower. A heavier, saline pore fluid would raise φD and widen the gap, so it is "
+         "not the cause. A matrix density slightly below 2.65 g/cc (core grain density 2.63–2.68 g/cc) or the "
+         "neutron's environmental corrections could account for it; this is unresolved.", "",
          "## Gamma-ray end-points and shales", "",
          f"GR clean {gr_cl:.0f} API, GR shale {gr_sh:.0f} API (3rd/97th percentiles over the interval).", "",
          shales.to_markdown(index=False, floatfmt=".3g"), "",
@@ -343,7 +345,6 @@ def main():
          f"- Rwe = {sp['rwe']:.4f} Ω·m → Rw = {sp['rw']:.4f} Ω·m (Bateman–Konen form of chart SP-2)",
          f"- Compare: Rwa in the same sand = {aq.rwa:.4f} Ω·m (Archie, m = {M}, φD).", "",
          "## Open questions for Thursday", "",
-         "- Neutron units of CNCF (limestone vs. sandstone).",
          f"- Surface temperature for the gradient (assumed {T_SURF:.0f} °F).",
          "- Which core porosity / permeability to use: 800 psi or 3,500 psi confining pressure.",
          "- Shale porosity and B for Juhasz: from the shale density/neutron or from core?",
