@@ -25,16 +25,25 @@ A, M, N = 1.0, 2.1, 1.95         # Archie parameters given in the assignment
 RMF_75, RM_75 = 1.32, 2.52       # ohm-m at 75 degF, log header
 BHT, BHT_DEPTH = 163.0, 6900.0   # degF at logger depth
 T_SURF = 80.0                    # degF, ASSUMED mean surface temperature (not on the header)
+LARGE_ZCOR = 0.10                # g/cc; ZDEN is already corrected, this only marks large corrections
+NPHI_SS_TO_LS = -0.04            # CNCF sandstone -> limestone units at zero porosity (quartz reads about
+                                 # -0.04), tapering with porosity as on the Schlumberger conversion chart
 
 
 # ----------------------------------------------------------------------------------- loading
+def ss_to_ls(nphi_ss):
+    """Sandstone- to limestone-unit neutron porosity; the same offset as the sandstone line in nd_lines."""
+    return nphi_ss + NPHI_SS_TO_LS * (1 - nphi_ss / 0.45 * 0.6)
+
+
 def load_logs():
     df = lasio.read(LAS).df()
     df = df[~df.index.duplicated()]
     df["NPHI"] = df.CNCF / 100.0
     df["PHID"] = (RHO_MA - df.ZDEN) / (RHO_MA - RHO_F)
     df["TEMP"] = T_SURF + (BHT - T_SURF) * df.index / BHT_DEPTH
-    df["BAD_RHO"] = df.ZCOR.abs() > 0.10
+    df["NPHI_LS"] = ss_to_ls(df.NPHI)
+    df["LARGE_ZCOR"] = df.ZCOR.abs() > LARGE_ZCOR
     df["WASHOUT"] = df.CAL > BIT + 1.0
     df["BAD_RT"] = df.RTBR < 0
     return df
@@ -79,7 +88,7 @@ def pick_sands(w, vsh_cut=0.4, min_ft=4.0):
         z = w.iloc[a:b]
         if z.index[-1] - z.index[0] + 0.5 < min_ft:
             continue
-        good = z[~z.BAD_RHO]
+        good = z
         phi = good.PHID.median()
         rt = z.RIPD.median()
         rwa = rt * phi ** M / A
@@ -149,7 +158,7 @@ def fig_composite(df, core, sands, path):
     ax[4].plot(w.DT24, w.index, "k", lw=0.7); ax[4].set(title="DT24 (µs/ft)")
     ax[5].plot(w.PE, w.index, "m", lw=0.7, label="PE (b/e)")
     ax[5].plot(w.ZCOR * 10 + 4, w.index, "c", lw=0.6, label="ZCOR ×10 + 4 (g/cc)")
-    bad = w[w.BAD_RHO]; ax[5].plot(np.full(len(bad), 5.8), bad.index, "r|", ms=4, label="|ZCOR| > 0.1")
+    big = w[w.LARGE_ZCOR]; ax[5].plot(np.full(len(big), 5.8), big.index, "r|", ms=4, label="|ZCOR| > 0.1 (applied)")
     ax[5].set(xlim=(0, 6), title="PE and density correction")
     k = core.kh_3500.where(~core.kh_3500_censored)
     ax[6].semilogx(k, core.depth_log, "ko", ms=4, label="kh (3,500 psi)")
@@ -177,17 +186,18 @@ def fig_shift(lags, scan, path):
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
 
-def nd_lines(ax):
-    """Approximate sandstone-unit neutron response of sandstone, limestone and dolomite (Schlumberger CP-1)."""
+def nd_lines(ax, units="sandstone"):
+    """Approximate neutron response of sandstone, limestone and dolomite (Schlumberger CP-1) in the given units."""
     phi = np.linspace(0, 0.45, 20)
-    for name, rho, off, col in [("Sandstone", 2.65, 0.0, "goldenrod"), ("Limestone", 2.71, 0.04, "steelblue"),
-                                ("Dolomite", 2.87, 0.09, "purple")]:
+    offsets = {"sandstone": (0.0, 0.04, 0.09), "limestone": (-0.04, 0.0, 0.05)}[units]
+    for (name, rho, col), off in zip([("Sandstone", 2.65, "goldenrod"), ("Limestone", 2.71, "steelblue"),
+                                      ("Dolomite", 2.87, "purple")], offsets):
         ax.plot(phi + off * (1 - phi / 0.45 * 0.6), rho - phi * (rho - 1.0), color=col, lw=1.2, label=name)
 
 
 def fig_crossplots(df, sands, vsh, path):
     w = df.loc[TOP:BASE]
-    good = w[~w.BAD_RHO & ~w.WASHOUT]
+    good = w[~w.WASHOUT]
     fig, ax = plt.subplots(2, 3, figsize=(17, 10.5))
     a = ax[0, 0]
     s = a.scatter(good.NPHI, good.ZDEN, c=good.GR, s=4, cmap="viridis")
@@ -230,7 +240,7 @@ def fig_crossplots(df, sands, vsh, path):
 
 def fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, path):
     w = df.loc[TOP:BASE]
-    good = w[~w.BAD_RHO & ~w.WASHOUT]
+    good = w[~w.WASHOUT]
     fig, ax = plt.subplots(1, 2, figsize=(14, 6))
     for a, sub, title in [(ax[0], good, "(a) Whole interval"), (ax[1], good.loc[aquifer[0]:aquifer[1]],
                           f"(b) Water sand {aquifer[0]:.0f}–{aquifer[1]:.0f} ft")]:
@@ -251,6 +261,27 @@ def fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, path):
     fig.tight_layout(); fig.savefig(path, dpi=140); plt.close(fig)
 
 
+def sandstone_nphi_ls(rhob):
+    """Limestone-unit neutron of water-filled quartz sandstone at bulk density rhob (the nd_lines sandstone line)."""
+    return ss_to_ls((RHO_MA - rhob) / (RHO_MA - RHO_F))
+
+
+def fig_nd_aquifer(clean, aquifer, path):
+    """Neutron-density cross-plot of the clean water sand with CNCF converted to limestone units."""
+    fig, ax = plt.subplots(figsize=(7.5, 6.5))
+    s = ax.scatter(clean.NPHI_LS, clean.ZDEN, c=clean.GR, s=12, cmap="viridis")
+    nd_lines(ax, units="limestone")
+    ax.plot(clean.NPHI_LS.median(), clean.ZDEN.median(), "r*", ms=16, label="Median of clean sand")
+    ax.text(0.01, 2.77, f"CNCF converted to limestone units ({NPHI_SS_TO_LS:+.2f} at zero porosity, tapering; chart approximation);\n"
+            "lithology lines approximate (Schlumberger CP-1)", fontsize=7)
+    ax.set(xlim=(-0.05, 0.45), ylim=(2.8, 1.9), xlabel="Neutron porosity, limestone units (v/v)",
+           ylabel="Bulk density ZDEN (g/cc)",
+           title=f"Neutron–density in the clean water sand, {aquifer[0]:.0f}–{aquifer[1]:.0f} ft (Vsh < 0.1)")
+    ax.grid(alpha=0.3); ax.legend(fontsize=8, loc="upper left")
+    plt.colorbar(s, ax=ax, label="GR (API)")
+    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
+
+
 # ------------------------------------------------------------------------------------- main
 RW_EST = None
 
@@ -267,8 +298,12 @@ def main():
     # neutron units: cleanest water sand
     aq = sands[sands.fluid == "water"].sort_values("thick").iloc[-1]
     aquifer = (aq.top, aq.base)
-    cl = w.loc[aq.top:aq.base]; cl = cl[(vsh.loc[aq.top:aq.base] < 0.1) & ~cl.BAD_RHO]
+    cl = w.loc[aq.top:aq.base]; cl = cl[(vsh.loc[aq.top:aq.base] < 0.1) & ~cl.WASHOUT]
     phid_cl, nphi_cl = cl.PHID.median(), cl.NPHI.median()
+    d_ss = cl.NPHI_LS - sandstone_nphi_ls(cl.ZDEN)          # distance from the sandstone line, limestone units
+    near_ss = (d_ss.abs() <= 0.03).mean()
+    d_ls = cl.NPHI_LS - (2.71 - cl.ZDEN) / (2.71 - RHO_F)   # distance from the limestone line
+    closer_ss = (d_ss.abs() < d_ls.abs()).mean()
 
     # SP Rw in the aquifer
     shale_base = np.mean([w.loc[5400:5500].SP.median(), w.loc[5885:5985].SP.median()])
@@ -279,7 +314,7 @@ def main():
     # shales
     shales = []
     for name, (a, b) in {"upper shale": (5400, 5500), "middle shale": (5885, 5985)}.items():
-        z = w.loc[a:b]; z = z[~z.BAD_RHO & ~z.WASHOUT]
+        z = w.loc[a:b]; z = z[~z.WASHOUT]
         shales.append(dict(shale=name, interval=f"{a}–{b}", GR=z.GR.median(), ZDEN=z.ZDEN.median(),
                            CNCF=z.NPHI.median(), PHID=z.PHID.median(), DT=z.DT24.median(), RIPD=z.RIPD.median(),
                            PE=z.PE.median(), K=z.K.median(), TH=z.TH.median(), U=z.U.median()))
@@ -294,6 +329,7 @@ def main():
     fig_shift(lags, scan, OUT / "02_depth_shift.png")
     fig_crossplots(df, sands, vsh, OUT / "03_crossplots.png")
     fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, OUT / "04_thomas_stieber.png")
+    fig_nd_aquifer(cl, aquifer, OUT / "05_nd_aquifer_limestone.png")
 
     # core vs. log at the plugs
     core["phid_log"] = np.interp(core.depth_log, df.index, df.PHID)
@@ -304,8 +340,9 @@ def main():
          f"Interval {TOP:.0f}–{BASE:.0f} ft MD, 0.5 ft sampling. Figures in this folder; generated by "
          "`project2/explore.py` in the formation-evaluation-inversion repo.", "",
          "## Data quality", "",
-         f"- Density correction |ZCOR| > 0.10 g/cc: {int(w.BAD_RHO.sum())} samples "
-         f"({w.BAD_RHO.mean()*100:.0f} %), flagged as dubious density.",
+         f"- ZDEN is already corrected (Baker reports the applied correction as ZCOR). A correction above "
+         f"{LARGE_ZCOR} g/cc was applied at {int(w.LARGE_ZCOR.sum())} samples ({w.LARGE_ZCOR.mean()*100:.0f} %); "
+         "these are kept but marked in the composite as less certain.",
          f"- Caliper more than 1 in over bit size ({BIT} in): {int(w.WASHOUT.sum())} samples ({w.WASHOUT.mean()*100:.0f} %).",
          f"- RTBR has {int(w.BAD_RT.sum())} negative values; RTBR is not used.",
          "- Spectral K/Th/U are zero above 5,238 ft (not recorded there); inside the interval they are present.",
@@ -320,13 +357,21 @@ def main():
          "See 02_depth_shift.png.",
          f"- Density φD vs. core φ (3,500 psi) at the plugs: bias {e.mean():+.3f}, RMS {np.sqrt((e**2).mean()):.3f}.",
          f"- {int(core.kh_3500_censored.sum())} plugs report kh > 9,999 md (censored).", "",
-         "## Neutron units", "",
-         f"In the cleanest part of the water sand ({aq.top:.0f}–{aq.base:.0f} ft, Vsh < 0.1): density φD = "
-         f"{phid_cl:.3f}, CNCF = {nphi_cl:.3f}. CNCF is in sandstone units (per the user, from class), so in "
-         "clean water-bearing quartz sand it should read close to φD; here it reads "
-         f"{phid_cl - nphi_cl:.3f} lower. A heavier, saline pore fluid would raise φD and widen the gap, so it is "
-         "not the cause. A matrix density slightly below 2.65 g/cc (core grain density 2.63–2.68 g/cc) or the "
-         "neutron's environmental corrections could account for it; this is unresolved.", "",
+         "## Neutron units and lithology in the aquifer", "",
+         f"CNCF is in sandstone units (from class). For the lithology cross-plot it was converted to limestone units "
+         f"with an offset of {NPHI_SS_TO_LS:+.2f} v/v at zero porosity that tapers with porosity (an approximation "
+         "of the chart conversion), and plotted on the "
+         f"limestone-unit chart lines (05_nd_aquifer_limestone.png). In the clean part of the water sand "
+         f"({aq.top:.0f}–{aq.base:.0f} ft, Vsh < 0.1, {len(cl)} samples): density φD = {phid_cl:.3f}, "
+         f"CNCF = {nphi_cl:.3f} (sandstone units).", "",
+         f"- {closer_ss*100:.0f} % of the samples lie closer to the sandstone line than to the limestone line, "
+         f"and {near_ss*100:.0f} % within ±0.03 v/v of it: the dominant lithology is quartz sandstone. The median "
+         f"sample plots {d_ss.median():+.3f} v/v from the sandstone line, toward lower neutron.",
+         f"- That offset matches the {phid_cl - nphi_cl:.3f} gap between the medians in sandstone units: converting "
+         "units moves "
+         "the data and the chart lines together, so it does not change it. A heavier, saline pore fluid would raise "
+         "φD and widen the gap, so it is not the cause; a matrix density slightly below 2.65 g/cc (core grain "
+         "density 2.63–2.68 g/cc) or the neutron's environmental corrections could account for it. Unresolved.", "",
          "## Gamma-ray end-points and shales", "",
          f"GR clean {gr_cl:.0f} API, GR shale {gr_sh:.0f} API (3rd/97th percentiles over the interval).", "",
          shales.to_markdown(index=False, floatfmt=".3g"), "",

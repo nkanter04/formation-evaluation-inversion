@@ -40,7 +40,13 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
 - Depths are measured depth (MD) in ft. Project 1's well is about 51° deviated: pressure
   gradients and hydrocarbon columns must be in TVD (minimum curvature from SDEV/HAZI).
 - Neutron units differ by project. Project 1's TNPH is in **limestone units** (quartz reads
-  about −0.035). Project 2's CNCF is in **sandstone units** (confirmed by the user from class).
+  about −0.035). Project 2's CNCF is in **sandstone units** (confirmed by the user from class);
+  convert it to limestone units before the lithology cross-plot in the clean water sand.
+- Project 2's density (ZDEN, Baker) is already corrected; ZCOR only reports the correction
+  applied. Mark large corrections, do not discard them.
+- Project 2 workflow from class: first assume no shale and run Archie over the whole interval
+  (porosity, Rw, Rxo, Sw), then add the grain-coating clay (Juhasz). For dispersed clay, Csh
+  from GR cannot exceed the clean-sand porosity.
 - Archie parameters are set by each assignment: Project 1 a = 1, m = 2.3, n = 1.97;
   Project 2 a = 1, m = 2.1, n = 1.95.
 - Project 1 uses three depth sections, each with its own reference shale and bracketed
@@ -49,6 +55,9 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
 - Juhasz adds the clay term to the water **conductivity**: 1/Rw + B·Qvn/Sw, with
   Qvn = Csh·φsh/φt.
 - Core Sw is unreliable in Project 1 (plugs flushed, Sw + So median 0.67).
+- Permeability: classify rocks first (Leverett, √(k/φ) as the throat-radius proxy, 4–5
+  fairways with equal sample counts, tied to the stratigraphy) and fit each class. Never a
+  single k–φ regression over all plugs. Use core values at reservoir stress.
 
 ## Code style
 
@@ -62,6 +71,10 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
 
 - Reports and explanations must be accurate and concise: state only what the data and the
   workflow support, and give caveats where results are uncertain.
+- The instructor grades critical thinking over execution. Reports need an executive summary
+  with quantitative results, a sensitivity analysis showing which inputs control Sw and by how
+  much, and a conclusion that evaluates the work (did it work, what is inaccurate, which
+  assumptions limit it, what to do better), not a recap.
 - The course requires an appendix describing how Claude was used. When adding a method or
   making an interpretive decision (an end-point, a cutoff, a parameter choice), say what was
   chosen and why, so the appendix can be written from it.
