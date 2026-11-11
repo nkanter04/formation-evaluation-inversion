@@ -59,3 +59,15 @@ def test_arps_and_wyllie():
     np.testing.assert_allclose(petro.rw_at_temperature(1.32, 75, 75), 1.32)
     assert petro.rw_at_temperature(1.32, 75, 150) < 1.32
     np.testing.assert_allclose(petro.wyllie_porosity(100.0, 55.5, 189.0, 1.0), 44.5 / 133.5)
+
+
+def test_throat_radius_scales_with_sqrt_k_over_phi():
+    r1, r2 = petro.throat_radius_um(100.0, 0.25), petro.throat_radius_um(400.0, 0.25)
+    np.testing.assert_allclose(r2 / r1, 2.0)
+    np.testing.assert_allclose(r1, np.sqrt(8 * 100 * 9.869e-4 / 0.25))
+
+
+def test_timur_and_coates_book_forms():
+    np.testing.assert_allclose(petro.timur_k(0.3, 0.2, 250, 3, 2), (250 * 0.027 / 0.2) ** 2)
+    np.testing.assert_allclose(petro.coates_k(0.3, 0.2, 100, 2, 2), (100 * 0.09 * 0.8 / 0.2) ** 2)
+    assert petro.coates_k(0.3, 1.0, 100, 2, 2) == 0.0

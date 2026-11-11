@@ -189,6 +189,25 @@ def wyllie_porosity(dt, dt_ma, dt_f, cp=1.0):
     return (np.asarray(dt) - dt_ma) / (dt_f - dt_ma) / cp
 
 
+# ------------------------------------------------------------------ permeability
+MD_TO_UM2 = 9.869e-4  # 1 md in square micrometers
+
+
+def throat_radius_um(k_md, phi):
+    """Equivalent throat radius of a bundle of equal capillary tubes, R = sqrt(8 k / phi) (book eq. 3.7.3)."""
+    return np.sqrt(8.0 * np.asarray(k_md) * MD_TO_UM2 / np.asarray(phi))
+
+
+def timur_k(phi, swi, alpha, beta, gamma):
+    """Timur / Tixier form, k = (alpha phi^beta / Swi)^gamma, phi and Swi as fractions, k in md (book 12.2.2)."""
+    return (alpha * np.power(phi, beta) / np.asarray(swi)) ** gamma
+
+
+def coates_k(phi, swi, alpha, beta, gamma):
+    """Coates form, k = (alpha phi^beta (1 - Swi) / Swi)^gamma (book 12.2.3)."""
+    return (alpha * np.power(phi, beta) * (1.0 - np.asarray(swi)) / np.asarray(swi)) ** gamma
+
+
 # ----------------------------------------------------------- well trajectory
 def tvd_minimum_curvature(md, inc_deg, azi_deg):
     """True vertical depth relative to the first sample, by minimum curvature."""

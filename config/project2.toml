@@ -34,3 +34,9 @@ max_vsh = 0.40               # GR index limit for net reservoir in hydrocarbon c
 
 [sensitivity]
 fraction = 0.10              # one-at-a-time perturbation of each input
+
+[permeability]
+n_classes = 4                # Leverett fairways with equal numbers of plugs
+stress = "3500"              # confining pressure of the core data used: "800" or "3500"
+max_sw = 0.99                # keep log(1 - Sw) finite
+good_rock_phi = 0.25         # core porosity limit for the good-rock correlation check
