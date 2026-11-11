@@ -1,0 +1,36 @@
+# PGE 385K Homework Project No. 2: shaly-sandstone interpretation with grain-coating clay.
+# Depths are in ft. Data paths and the temperature model are in project2/explore.py.
+
+[archie]
+a = 1.0
+m = 2.1
+n = 1.95
+
+[matrix]
+rho_ma = 2.65                # g/cc, quartz
+dt_ma = 55.5                 # us/ft, quartz (Wyllie)
+dt_f = 189.0                 # us/ft, water (Wyllie)
+rho_filtrate = 1.0           # g/cc
+
+[shale]
+# Reference shales. Sands above `boundary` use the upper shale, sands below it the middle shale.
+upper = [5400.0, 5500.0]
+middle = [5885.0, 5985.0]
+boundary = 5885.0
+# Book eq. 10.15.11: phi_sh = alpha*phiD_sh + (1 - alpha)*phiN_sh. alpha = 1 takes the density
+# porosity, because the shale neutron also responds to hydroxyl in the clay structure.
+alpha = 1.0
+
+[water_sands]
+max_vsh = 0.12               # GR index limit for clean samples used to calibrate Rw
+edge_ft = 1.5                # stay this far inside the sand (bed-center readings)
+min_samples = 8              # minimum clean samples for a sand to be used
+
+[juhasz]
+fit_max_sb = 0.20           # fit the water-sand normalization only below this Sb; shalier samples act laminated
+
+[net]
+max_vsh = 0.40               # GR index limit for net reservoir in hydrocarbon columns
+
+[sensitivity]
+fraction = 0.10              # one-at-a-time perturbation of each input

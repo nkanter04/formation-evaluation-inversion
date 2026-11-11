@@ -114,6 +114,81 @@ def sand_rxo_parallel(rxo, csh, rsh_h):
         return np.where(cond > 0, (1.0 - csh) / cond, np.nan)
 
 
+# ------------------------------------------------- grain-coating clay (dispersed)
+def rms_porosity(phi_d, phi_n):
+    """Neutron-density porosity, sqrt[(phiD^2 + phiN^2) / 2] (book eq. 9.6.1)."""
+    return np.sqrt((np.asarray(phi_d) ** 2 + np.asarray(phi_n) ** 2) / 2.0)
+
+
+def grain_coating_porosity(phi_d, phi_n, csh, phi_d_sh, phi_n_sh, phi_sh):
+    """Non-shale and total porosity with grain-coating clay (book A.11.4-6, 10.15.12).
+
+    phiDc = phiD - Csh*phiD_sh, phiNc = phiN - Csh*phiN_sh, phi_s = RMS(phiDc, phiNc),
+    phi_t = phi_s + Csh*phi_sh. Returns (phi_s, phi_t).
+    """
+    phi_dc = np.maximum(np.asarray(phi_d) - csh * phi_d_sh, 0.0)
+    phi_nc = np.maximum(np.asarray(phi_n) - csh * phi_n_sh, 0.0)
+    phi_s = rms_porosity(phi_dc, phi_nc)
+    return phi_s, phi_s + csh * phi_sh
+
+
+def bound_water_fraction(csh, phi_sh, phi_t):
+    """Sb = Csh*phi_sh/phi_t, also Juhasz's normalized Qv (book 10.15.13, A.14.5)."""
+    return csh * phi_sh / phi_t
+
+
+def waxman_smits_b(temp_f, rw):
+    """Equivalent counterion conductance B for T in degF and Rw in ohm.m (book A.14.4)."""
+    return (-5.41 + 0.133 * temp_f - 0.0001253 * temp_f ** 2) / (1.0 + rw ** 1.23 * (0.025 * temp_f - 1.07))
+
+
+def juhasz_rt(rw, phi_t, sw, sb, b, a, m, n):
+    """Juhasz: 1/Rt = (phi_t^m Sw^n / a) (1/Rw + B Sb / Sw) (book A.14.6)."""
+    return a / (np.power(phi_t, m) * np.power(sw, n) * (1.0 / rw + b * sb / sw))
+
+
+def juhasz_sw(rt, rw, phi_t, sb, b, a, m, n, iterations=200, tol=1e-7):
+    """Total water saturation by nested iteration from the Archie value (book A.14.a), limited to Sb..1."""
+    rt, phi_t, sb = np.broadcast_arrays(*(np.asarray(x, float) for x in (rt, phi_t, sb)))
+    lo = np.maximum(sb, 1e-3)
+    sw = np.clip(archie_sw(rt, rw, phi_t, a, m, n), lo, 1.0)
+    for _ in range(iterations):
+        with np.errstate(invalid="ignore", divide="ignore"):
+            new = np.power(a / (np.power(phi_t, m) * rt * (1.0 / rw + b * sb / sw)), 1.0 / n)
+        new = np.clip(0.5 * (sw + new), lo, 1.0)
+        done = np.nanmax(np.abs(new - sw)) < tol
+        sw = new
+        if done:
+            break
+    return sw
+
+
+def juhasz_rw(rt, phi_t, sb, temp_f, a, m, iterations=100):
+    """Rw from a water-saturated rock (Sw = 1): 1/Rw = phi-normalized conductivity minus B*Sb, B depending on Rw."""
+    rt, phi_t, sb = (np.asarray(x, float) for x in (rt, phi_t, sb))
+    cond = a / (rt * np.power(phi_t, m))      # equals 1/Rw + B*Sb at Sw = 1
+    rw = 1.0 / cond
+    for _ in range(iterations):
+        c_w = np.maximum(cond - waxman_smits_b(temp_f, rw) * sb, 1e-3)
+        rw = 0.5 * (rw + 1.0 / c_w)
+    return rw
+
+
+def sandstone_sw(sw_t, sb):
+    """Non-shale water saturation, Sws = (Sw - Sb)/(1 - Sb) (book 10.15.21)."""
+    return (np.asarray(sw_t) - sb) / (1.0 - sb)
+
+
+def rw_at_temperature(r1, t1, t2):
+    """Arps: resistivity of an electrolyte moved from t1 to t2, both in degF."""
+    return r1 * (t1 + 6.77) / (t2 + 6.77)
+
+
+def wyllie_porosity(dt, dt_ma, dt_f, cp=1.0):
+    """Sonic porosity with compaction coefficient Cp (book A.15.2-3)."""
+    return (np.asarray(dt) - dt_ma) / (dt_f - dt_ma) / cp
+
+
 # ----------------------------------------------------------- well trajectory
 def tvd_minimum_curvature(md, inc_deg, azi_deg):
     """True vertical depth relative to the first sample, by minimum curvature."""
