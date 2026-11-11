@@ -59,6 +59,11 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
 - Juhasz adds the clay term to the water **conductivity**: 1/Rw + B·Qvn/Sw, with
   Qvn = Csh·φsh/φt.
 - Core Sw is unreliable in Project 1 (plugs flushed, Sw + So median 0.67).
+- Mud type: Project 1 was **oil-based** (from the instructor; not in the LAS), so an Rmf-based Sxo does not
+  apply there. Project 2 is water-based Polyplus (Rmf 1.32 Ω·m at 75 °F). Never assume the mud type.
+- Flat Sw with height does not prove irreducible saturation; each rock class has its own capillary curve.
+- The Larionov (Tertiary) correction was marked not applicable, and neutron-density Csh applies only in
+  an aquifer.
 - Permeability: classify rocks first (Leverett, √(k/φ) as the throat-radius proxy, 4–5
   fairways with equal sample counts, tied to the stratigraphy) and fit each class. Never a
   single k–φ regression over all plugs. Use core values at reservoir stress.
@@ -79,6 +84,9 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
   with quantitative results, a sensitivity analysis showing which inputs control Sw and by how
   much, and a conclusion that evaluates the work (did it work, what is inaccurate, which
   assumptions limit it, what to do better), not a recap.
+- In reports write **sandstone**, not sand; state gamma-ray trends explicitly alongside terms like fining
+  upward; show an inversion's cost function where it is first described; include best recommended
+  practices and lessons learned; leave out detail that was not asked for.
 - The course requires an appendix describing how Claude was used. When adding a method or
   making an interpretive decision (an end-point, a cutoff, a parameter choice), say what was
   chosen and why, so the appendix can be written from it.

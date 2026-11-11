@@ -170,7 +170,7 @@ def fig_composite(df, core, sands, path):
         a.axhline(TOP, color="k", ls="--", lw=0.8); a.axhline(BASE, color="k", ls="--", lw=0.8)
         a.grid(alpha=0.3); a.legend(fontsize=6.5, loc="lower right")
     ax[0].set_ylim(BASE + 20, TOP - 20); ax[0].set_ylabel("Measured depth (ft)")
-    fig.suptitle("ORM-75: logs and core, 5,400–6,300 ft (blue: water sands, green: possible hydrocarbon, "
+    fig.suptitle("ORM-75: logs and core, 5,400–6,300 ft (blue: water sandstones, green: possible hydrocarbon, "
                  "orange: transition/shaly)", fontsize=12)
     fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
 
@@ -243,9 +243,9 @@ def fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, path):
     good = w[~w.WASHOUT]
     fig, ax = plt.subplots(1, 2, figsize=(14, 6))
     for a, sub, title in [(ax[0], good, "(a) Whole interval"), (ax[1], good.loc[aquifer[0]:aquifer[1]],
-                          f"(b) Water sand {aquifer[0]:.0f}–{aquifer[1]:.0f} ft")]:
+                          f"(b) Water sandstone {aquifer[0]:.0f}–{aquifer[1]:.0f} ft")]:
         s = a.scatter(vsh.reindex(sub.index), sub.PHID, c=sub.index, s=6, cmap="viridis_r")
-        # laminar: straight line from clean sand to shale
+        # laminar: straight line from clean sandstone to shale
         a.plot([0, 1], [phi_clean, phi_sh], "g-", lw=1.5, label="Laminar")
         # dispersed: shale fills sand pores, phiT = phi_clean - Vsh (1 - phi_sh), up to Vsh = phi_clean
         a.plot([0, phi_clean], [phi_clean, phi_clean * phi_sh], "r-", lw=1.5, label="Dispersed (ends at Vsh = φclean)")
@@ -267,16 +267,16 @@ def sandstone_nphi_ls(rhob):
 
 
 def fig_nd_aquifer(clean, aquifer, path):
-    """Neutron-density cross-plot of the clean water sand with CNCF converted to limestone units."""
+    """Neutron-density cross-plot of the clean water sandstone with CNCF converted to limestone units."""
     fig, ax = plt.subplots(figsize=(7.5, 6.5))
     s = ax.scatter(clean.NPHI_LS, clean.ZDEN, c=clean.GR, s=12, cmap="viridis")
     nd_lines(ax, units="limestone")
-    ax.plot(clean.NPHI_LS.median(), clean.ZDEN.median(), "r*", ms=16, label="Median of clean sand")
+    ax.plot(clean.NPHI_LS.median(), clean.ZDEN.median(), "r*", ms=16, label="Median of clean sandstone")
     ax.text(0.01, 2.77, f"CNCF converted to limestone units ({NPHI_SS_TO_LS:+.2f} at zero porosity, tapering; chart approximation);\n"
             "lithology lines approximate (Schlumberger CP-1)", fontsize=7)
     ax.set(xlim=(-0.05, 0.45), ylim=(2.8, 1.9), xlabel="Neutron porosity, limestone units (v/v)",
            ylabel="Bulk density ZDEN (g/cc)",
-           title=f"Neutron–density in the clean water sand, {aquifer[0]:.0f}–{aquifer[1]:.0f} ft (Vsh < 0.1)")
+           title=f"Neutron–density in the clean water sandstone, {aquifer[0]:.0f}–{aquifer[1]:.0f} ft (Vsh < 0.1)")
     ax.grid(alpha=0.3); ax.legend(fontsize=8, loc="upper left")
     plt.colorbar(s, ax=ax, label="GR (API)")
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
@@ -295,7 +295,7 @@ def main():
     sands, rw_rwa = classify(sands)
     RW_EST = rw_rwa
 
-    # neutron units: cleanest water sand
+    # neutron units: cleanest water sandstone
     aq = sands[sands.fluid == "water"].sort_values("thick").iloc[-1]
     aquifer = (aq.top, aq.base)
     cl = w.loc[aq.top:aq.base]; cl = cl[(vsh.loc[aq.top:aq.base] < 0.1) & ~cl.WASHOUT]
@@ -348,7 +348,7 @@ def main():
          "- Spectral K/Th/U are zero above 5,238 ft (not recorded there); inside the interval they are present.",
          "- No Rh/Rv (triaxial) and no deviation survey: shale topology cannot be diagnosed from anisotropy here.", "",
          "## Core", "",
-         f"- {len(core)} plugs, cores 1–5, sands {', '.join(core.sand.unique())}; log depths "
+         f"- {len(core)} plugs, cores 1–5, sandstones {', '.join(core.sand.unique())}; log depths "
          f"{core.depth_log.min():.1f}–{core.depth_log.max():.1f} ft.",
          "- Core-to-log shifts already applied in the spreadsheet: " + ", ".join(
              f"core {k}: {core.loc[core.core == k, 'shift'].iloc[0]:+.0f} ft" for k in sorted(core.core.unique())) + ".",
@@ -361,7 +361,7 @@ def main():
          f"CNCF is in sandstone units (from class). For the lithology cross-plot it was converted to limestone units "
          f"with an offset of {NPHI_SS_TO_LS:+.2f} v/v at zero porosity that tapers with porosity (an approximation "
          "of the chart conversion), and plotted on the "
-         f"limestone-unit chart lines (05_nd_aquifer_limestone.png). In the clean part of the water sand "
+         f"limestone-unit chart lines (05_nd_aquifer_limestone.png). In the clean part of the water sandstone "
          f"({aq.top:.0f}–{aq.base:.0f} ft, Vsh < 0.1, {len(cl)} samples): density φD = {phid_cl:.3f}, "
          f"CNCF = {nphi_cl:.3f} (sandstone units).", "",
          f"- {closer_ss*100:.0f} % of the samples lie closer to the sandstone line than to the limestone line, "
@@ -375,20 +375,20 @@ def main():
          "## Gamma-ray end-points and shales", "",
          f"GR clean {gr_cl:.0f} API, GR shale {gr_sh:.0f} API (3rd/97th percentiles over the interval).", "",
          shales.to_markdown(index=False, floatfmt=".3g"), "",
-         "## Sand bodies (GR-index Vsh < 0.4, at least 4 ft thick)", "",
+         "## Sandstone bodies (GR-index Vsh < 0.4, at least 4 ft thick)", "",
          f"Fluid call from the apparent Rw (Rwa = Rt·φD^{M}); the reference Rw = lowest Rwa of the thick "
-         f"(≥ 20 ft) sands = {rw_rwa:.3f} Ω·m. Rt/R0 > 3 → possible hydrocarbon; < 1.6 → water. Sw estimate is a "
+         f"(≥ 20 ft) sandstones = {rw_rwa:.3f} Ω·m. Rt/R0 > 3 → possible hydrocarbon; < 1.6 → water. Sw estimate is a "
          "quick Archie number for orientation only.", "",
           sands[["top", "base", "thick", "gr", "vsh", "sp", "rt", "rxo", "phid", "nphi", "rwa", "rt_over_r0", "sw_est", "fluid"]]
               .to_markdown(index=False, floatfmt=(".1f", ".1f", ".1f", ".0f", ".2f", ".0f", ".2f", ".2f", ".3f", ".3f",
                                                   ".3f", ".1f", ".2f", "")), "",
          "## Rw from the SP (first estimate)", "",
-         f"Thick water sand {aq.top:.0f}–{aq.base:.0f} ft, SSP = {ssp:.1f} mV (median sand SP minus the shale "
+         f"Thick water sandstone {aq.top:.0f}–{aq.base:.0f} ft, SSP = {ssp:.1f} mV (median sandstone SP minus the shale "
          f"baseline {shale_base:.1f} mV, the mean of the two shales' medians). "
          f"Temperature {t_aq:.0f} °F assuming {T_SURF:.0f} °F at surface and {BHT:.0f} °F at {BHT_DEPTH:.0f} ft.", "",
          f"- Rmf at formation temperature = {sp['rmf']:.3f} Ω·m; Rmfe = {sp['rmfe']:.3f}; K = {sp['k']:.1f}",
          f"- Rwe = {sp['rwe']:.4f} Ω·m → Rw = {sp['rw']:.4f} Ω·m (Bateman–Konen form of chart SP-2)",
-         f"- Compare: Rwa in the same sand = {aq.rwa:.4f} Ω·m (Archie, m = {M}, φD).", "",
+         f"- Compare: Rwa in the same sandstone = {aq.rwa:.4f} Ω·m (Archie, m = {M}, φD).", "",
          "## Open questions for Thursday", "",
          f"- Surface temperature for the gradient (assumed {T_SURF:.0f} °F).",
          "- Which core porosity / permeability to use: 800 psi or 3,500 psi confining pressure.",

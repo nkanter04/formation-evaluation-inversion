@@ -69,18 +69,18 @@ def models(data):
     group = (data.group == "E").astype(float).values
     return {"Core φ only": [lphi_c], "Log φt only": [lphi_t], "Log Sw only": [lsw],
             "Log φt + Sw (Timur form)": [lphi_t, lsw], "Log φt + (1−Sw)/Sw (Coates form)": [lphi_t, lmob],
-            "Log φt + Sw + Csh": [lphi_t, lsw, data.csh.values], "Log φt + Sw + sand group": [lphi_t, lsw, group]}
+            "Log φt + Sw + Csh": [lphi_t, lsw, data.csh.values], "Log φt + Sw + sandstone group": [lphi_t, lsw, group]}
 
 
 def irreducible_check(res, sands):
-    """Within each hydrocarbon sand, does Sw rise toward the base, as it would in a transition zone?"""
+    """Within each hydrocarbon sandstone, does Sw rise toward the base, as it would in a transition zone?"""
     rows = []
     for _, s in sands[sands.fluid == "possible hydrocarbon"].iterrows():
         z = res.loc[s.top:s.base]
         z = z[z.i_gr < it.CFG["net"]["max_vsh"]]
         third = max(len(z) // 3, 1)
         bvw = z.phi_t * z.sw_j
-        rows.append(dict(sand=f"{s.top:.0f}–{s.base:.0f}", sw_top=z.sw_j.iloc[:third].mean(), sw_base=z.sw_j.iloc[-third:].mean(),
+        rows.append(dict(sandstone=f"{s.top:.0f}–{s.base:.0f}", sw_top=z.sw_j.iloc[:third].mean(), sw_base=z.sw_j.iloc[-third:].mean(),
                          r_sw_depth=np.corrcoef(z.index, z.sw_j)[0, 1], r_sw_phi=np.corrcoef(z.phi_t, z.sw_j)[0, 1], bvw=bvw.median()))
     return pd.DataFrame(rows)
 
@@ -161,7 +161,7 @@ def main():
         z, zc = data[data.rock_class == c], core[core.rock_class == c]
         rows.append(dict(rock_class=c, plugs=len(zc), censored=int(zc.censored.sum()), radius_um=zc.radius.median(), k_min=z.k.min(), k_max=z.k.max(),
                          core_phi=z.phi.mean(), phi_t=z.phi_t.mean(), sw_j=z.sw_j.mean(), csh=z.csh.mean(),
-                         sands=", ".join(f"{s}:{n}" for s, n in zc.sand.value_counts().sort_index().items())))
+                         sandstones=", ".join(f"{s}:{n}" for s, n in zc.sand.value_counts().sort_index().items())))
     classes = pd.DataFrame(rows)
 
     # Within-class fit of log k on the independent (calculated) properties, with the caveat in the text
@@ -216,11 +216,11 @@ def main():
          f"{corr(np.log10(good.phi), np.log10(good.k)):.2f}; log φt r = {corr(np.log10(good.phi_t), np.log10(good.k)):.2f}; "
          f"log Sw r = {corr(np.log10(good.swi), np.log10(good.k)):.2f}. Log k spans {np.log10(good.k).max() - np.log10(good.k).min():.1f} decades in this subset "
          f"against {lk.max() - lk.min():.1f} in all plugs.", "",
-         "By sand group, log Sw vs. log k: " + "; ".join(
-             f"{g} sands r = {corr(np.log10(z.swi), np.log10(z.k)):.2f} ({len(z)} plugs)" for g, z in data.groupby("group")) + ".", "",
+         "By sandstone group, log Sw vs. log k: " + "; ".join(
+             f"{g} sandstones r = {corr(np.log10(z.swi), np.log10(z.k)):.2f} ({len(z)} plugs)" for g, z in data.groupby("group")) + ".", "",
          "## Is the calculated Sw irreducible?", "",
          irr.to_markdown(index=False, floatfmt=("", ".2f", ".2f", ".2f", ".2f", ".3f")), "",
-         "A transition zone would show Sw rising toward the base of each sand (positive r with depth) independently of porosity. There are no pressure data or capillary-pressure measurements here, so this check is indirect.", "",
+         "Sw rising toward the base of a sandstone is consistent with a transition zone, but this test is not conclusive either way: each rock class has its own capillary-pressure curve, so a flat Sw profile does not prove irreducible saturation, and Sw also changes with rock quality. The calculated Sw is therefore an estimate of Swi, not a measurement of it. There are no pressure or capillary-pressure data here.", "",
          "## Published equations with calculated φt and Sw", "",
          pub.to_markdown(index=False, floatfmt=("", "", "", "", "+.2f", ".2f")), ""]
     (it.OUT / "permeability_summary.md").write_text("\n".join(L), encoding="utf-8")

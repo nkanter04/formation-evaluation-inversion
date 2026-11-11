@@ -45,7 +45,7 @@ def shale_properties(w):
 
 
 def water_sand_samples(w, sands, vsh):
-    """Bed-center clean samples of each water sand: {(top, base): index}."""
+    """Bed-center clean samples of each water sandstone: {(top, base): index}."""
     c = CFG["water_sands"]
     out = {}
     for _, s in sands[sands.fluid == "water"].iterrows():
@@ -60,7 +60,7 @@ def water_sand_samples(w, sands, vsh):
 def calculate(w, vsh, groups, shale, sc=BASE_SCALES, recalibrate=True, fixed=None):
     """Archie and Juhasz results for one set of input scale factors.
 
-    With recalibrate=True, Rw is re-derived from the water sands using the perturbed inputs, as a
+    With recalibrate=True, Rw is re-derived from the water sandstones using the perturbed inputs, as a
     real interpretation would be; otherwise `fixed` is used. Sxo uses the header Rmf.
     """
     a, m, n = A0, M0 * sc["m"], N0 * sc["n"]
@@ -75,7 +75,7 @@ def calculate(w, vsh, groups, shale, sc=BASE_SCALES, recalibrate=True, fixed=Non
     phi_a = petro.rms_porosity(phid, phin)
 
     def calibrate(values):
-        """Median over the water sands of a per-sample water resistivity, referred to 75 degF."""
+        """Median over the water sandstones of a per-sample water resistivity, referred to 75 degF."""
         rows = {}
         for key, idx in groups.items():
             i = [pos[d] for d in idx]
@@ -123,7 +123,7 @@ def calculate(w, vsh, groups, shale, sc=BASE_SCALES, recalibrate=True, fixed=Non
 
 
 def hc_summary(res, zones):
-    """Depth-summed hydrocarbon column over the given sands (STEP-ft samples, vertical well assumed)."""
+    """Depth-summed hydrocarbon column over the given sandstones (STEP-ft samples, vertical well assumed)."""
     idx = np.zeros(len(res), bool)
     for _, s in zones.iterrows():
         idx |= (res.index >= s.top) & (res.index <= s.base)
@@ -211,8 +211,8 @@ def fig_rw(table, rw_a75, rw_j75, path):
     ax.bar(x + wd, table.rw_sp, wd, label="SP", color="#e45756")
     ax.axhline(rw_a75, color="#4c78a8", ls="--", lw=1, label=f"Archie median {rw_a75:.3f}")
     ax.axhline(rw_j75, color="#333333", ls=":", lw=1, label=f"Juhasz median {rw_j75:.3f}")
-    ax.set_xticks(x, table.sand, rotation=30, ha="right")
-    ax.set(ylabel="Rw at 75 °F (Ω·m)", xlabel="Water sand (ft MD)", title="Rw from each clean water sand")
+    ax.set_xticks(x, table.sandstone, rotation=30, ha="right")
+    ax.set(ylabel="Rw at 75 °F (Ω·m)", xlabel="Water sandstone (ft MD)", title="Rw from each clean water sandstone")
     ax.grid(alpha=0.3, axis="y"); ax.legend(fontsize=8)
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
@@ -222,7 +222,7 @@ def fig_compare(res, core, net, path):
     r = res[net]
     s = ax[0].scatter(r.sw_a, r.sw_j, c=r.csh, s=5, cmap="viridis")
     ax[0].plot([0, 1], [0, 1], "k--", lw=1, label="1:1")
-    ax[0].set(xlim=(0, 1), ylim=(0, 1), xlabel="Sw, Archie (v/v)", ylabel="Sw, Juhasz (v/v)", title="(a) Sw: Juhasz vs. Archie, net sands")
+    ax[0].set(xlim=(0, 1), ylim=(0, 1), xlabel="Sw, Archie (v/v)", ylabel="Sw, Juhasz (v/v)", title="(a) Sw: Juhasz vs. Archie, net sandstones")
     plt.colorbar(s, ax=ax[0], label="Csh (v/v)")
     for col, lab, c in [("phi_a", "Archie φ", "b"), ("phi_t", "φt", "k"), ("phi_sonic", "Sonic φ", "r")]:
         ax[1].scatter(core.phi_3500, core[col], s=16, color=c, alpha=0.7, label=lab)
@@ -230,7 +230,7 @@ def fig_compare(res, core, net, path):
     ax[1].set(xlim=(0.05, 0.45), ylim=(0.05, 0.45), xlabel="Core porosity at 3,500 psi (v/v)", ylabel="Log porosity (v/v)", title="(b) Log vs. core porosity")
     ax[2].scatter(r.sw_j, r.sxo_j, c=r.phi_t, s=5, cmap="plasma")
     ax[2].plot([0, 1], [0, 1], "k--", lw=1, label="Sxo = Sw")
-    ax[2].set(xlim=(0, 1), ylim=(0, 1), xlabel="Sw, Juhasz (v/v)", ylabel="Sxo, Juhasz (v/v)", title="(c) Sxo vs. Sw, net sands")
+    ax[2].set(xlim=(0, 1), ylim=(0, 1), xlabel="Sw, Juhasz (v/v)", ylabel="Sxo, Juhasz (v/v)", title="(c) Sxo vs. Sw, net sandstones")
     for a in ax:
         a.grid(alpha=0.3); a.legend(fontsize=8)
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
@@ -238,12 +238,12 @@ def fig_compare(res, core, net, path):
 
 def fig_juhasz_plot(x, y, fit, b_book, max_sb, path):
     fig, ax = plt.subplots(figsize=(7.5, 5.5))
-    ax.scatter(x, y, s=8, color="#4c78a8", label="Water-sand samples")
+    ax.scatter(x, y, s=8, color="#4c78a8", label="Water-sandstone samples")
     ax.axvline(max_sb, color="0.5", ls=":", lw=1, label=f"Fit limit, Sb = {max_sb}")
     xx = np.linspace(0, np.nanmax(x), 20)
     ax.plot(xx, fit[1] + fit[0] * xx, "k", lw=1.5, label=f"Fit (Sb < {max_sb}): 1/Rw = {fit[1]:.1f} S/m, B = {fit[0]:.1f}")
     ax.plot(xx, fit[1] + b_book * xx, "r--", lw=1.2, label=f"Book B = {b_book:.1f}, same intercept")
-    ax.set(xlabel="Sb = Csh·φsh/φt (v/v)", ylabel="a / (Rt·φt^m) (S/m)", title="Juhasz normalization in the water sands (Sw = 1)")
+    ax.set(xlabel="Sb = Csh·φsh/φt (v/v)", ylabel="a / (Rt·φt^m) (S/m)", title="Juhasz normalization in the water sandstones (Sw = 1)")
     ax.grid(alpha=0.3); ax.legend(fontsize=8)
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
@@ -255,7 +255,7 @@ def fig_tornado(sens, path):
     ax.barh(y, s.sw_lo, color="#4c78a8", label="Input −10 %")
     ax.barh(y, s.sw_hi, color="#e45756", label="Input +10 %")
     ax.set_yticks(y, s.input); ax.axvline(0, color="k", lw=0.8)
-    ax.set(xlabel="Change in mean Sw of the hydrocarbon sands (%)", ylabel="Input", title="Sensitivity of Juhasz Sw to ±10 % inputs (Rw held)")
+    ax.set(xlabel="Change in mean Sw of the hydrocarbon sandstones (%)", ylabel="Input", title="Sensitivity of Juhasz Sw to ±10 % inputs (Rw held)")
     ax.grid(alpha=0.3, axis="x"); ax.legend(fontsize=8)
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
@@ -280,12 +280,12 @@ def main():
     for key, idx in groups.items():
         z = w.loc[idx]; t = z.TEMP.mean()
         sp = ex.rw_from_sp(z.SP.median() - shale_base, t)
-        rows.append(dict(sand=f"{key[0]:.0f}–{key[1]:.0f}", n=len(idx), temp=t, ssp=z.SP.median() - shale_base,
+        rows.append(dict(sandstone=f"{key[0]:.0f}–{key[1]:.0f}", n=len(idx), temp=t, ssp=z.SP.median() - shale_base,
                          phi_nd_diff=(z.NPHI - z.PHID).median(), rw_archie=cal["rw_a_sands"][key],
                          rw_juhasz=cal["rw_j_sands"][key], rw_sp=petro.rw_at_temperature(sp["rw"], t, 75.0)))
     rw_table = pd.DataFrame(rows)
 
-    # Juhasz normalization plot in all water sands, at mean temperature
+    # Juhasz normalization plot in all water sandstones, at mean temperature
     ws = sands[sands.fluid == "water"]
     in_ws = np.zeros(len(w), bool)
     for _, s in ws.iterrows():
@@ -322,7 +322,7 @@ def main():
     per = []
     for _, s in hc.iterrows():
         z = res.loc[s.top:s.base]; z = z[z.i_gr < CFG["net"]["max_vsh"]]
-        per.append(dict(sand=f"{s.top:.0f}–{s.base:.0f}", net_ft=len(z) * STEP, csh=z.csh.mean(), phi_a=z.phi_a.mean(), phi_t=z.phi_t.mean(),
+        per.append(dict(sandstone=f"{s.top:.0f}–{s.base:.0f}", net_ft=len(z) * STEP, csh=z.csh.mean(), phi_a=z.phi_a.mean(), phi_t=z.phi_t.mean(),
                         phi_s=z.phi_s.mean(), sw_a=z.sw_a.mean(), sw_j=z.sw_j.mean(), sws=z.sws.mean(), sxo_j=z.sxo_j.mean(),
                         col_a=z.hpv_a.sum() * STEP, col_j=z.hpv_j.sum() * STEP, wat_j=z.wpv_j.sum() * STEP))
     per = pd.DataFrame(per)
@@ -357,11 +357,11 @@ def main():
          rw_table.to_markdown(index=False, floatfmt=("", ".0f", ".0f", ".1f", "+.3f", ".3f", ".3f", ".3f")), "",
          f"Rw at 75 °F: Archie {cal['rw_a75']:.3f}, Juhasz {cal['rw_j75']:.3f}, SP median {rw_table.rw_sp.median():.3f} Ω·m. "
          "The SP reads about 20 % higher; it depends on the assumed temperature, the Rmf-to-Rmfe conversion and the shale baseline, "
-         "and thin sands do not develop the full static SP.", "",
-         f"Juhasz normalization in the water sands, fitted for Sb < {CFG['juhasz']['fit_max_sb']} ({int(low.sum())} samples): "
+         "and thin sandstones do not develop the full static SP.", "",
+         f"Juhasz normalization in the water sandstones, fitted for Sb < {CFG['juhasz']['fit_max_sb']} ({int(low.sum())} samples): "
          f"intercept 1/Rw = {fit[1]:.1f} S/m (Rw = {1/fit[1]:.3f} Ω·m at {t_mean:.0f} °F, or "
          f"{petro.rw_at_temperature(1/fit[1], t_mean, 75.0):.3f} Ω·m at 75 °F), fitted B = {fit[0]:.1f} ± {b_se:.1f}, book eq. A.14.4 B = {b_book:.1f}. "
-         "Clay conduction is not detectable above the scatter in these saline water sands, as expected: at Sb = 0.1 the book's B "
+         "Clay conduction is not detectable above the scatter in these saline water sandstones, as expected: at Sb = 0.1 the book's B "
          "adds only about 7 % to the water conductivity. "
          f"Including the shaliest samples the slope rises to {fit_all[0]:.1f}, which likely reflects laminated shale that the "
          "dispersed-clay model does not represent.", "",
@@ -369,9 +369,9 @@ def main():
          f"GR clean {gr_cl:.0f}, GR shale {gr_sh:.0f} API. φclean (Csh cap) = {cal['phi_clean']:.3f}. "
          f"Upper shale φD {sv['upper']['phid']:.3f}, φN {sv['upper']['phin']:.3f}; middle shale φD {sv['middle']['phid']:.3f}, "
          f"φN {sv['middle']['phin']:.3f}. Of the net samples, {res.capped[net].mean()*100:.0f} % have a GR index above the cap.", "",
-         "## Hydrocarbon sands", "",
+         "## Hydrocarbon sandstones", "",
          per.to_markdown(index=False, floatfmt=("", ".1f", ".3f", ".3f", ".3f", ".3f", ".3f", ".3f", ".3f", ".3f", ".2f", ".2f", ".2f")), "",
-         f"Total hydrocarbon column in net hydrocarbon sands: Archie {tot['col_a']:.2f} ft, Juhasz {tot['col_j']:.2f} ft "
+         f"Total hydrocarbon column in net hydrocarbon sandstones: Archie {tot['col_a']:.2f} ft, Juhasz {tot['col_j']:.2f} ft "
          f"({100*(tot['col_j']/tot['col_a']-1):+.1f} %). Mean Sw: Archie {tot['sw_a']:.3f}, Juhasz {tot['sw_j']:.3f}.", "",
          f"Archie with no shale over the whole interval gives {whole_a:.1f} ft of apparent hydrocarbon column, most of it "
          "false: in shale the high neutron reading inflates porosity, so the predicted water-bearing resistivity is too low and "
@@ -385,22 +385,23 @@ def main():
           f"{core.rho_f[good].median():.2f} g/cc, interquartile range {core.rho_f[good].quantile(.25):.2f}–"
           f"{core.rho_f[good].quantile(.75):.2f} ({int(good.sum())} plugs). This is water-like: the density tool reads mainly the "
           "invaded zone, and a 0.02 error in porosity moves the result by about 0.1 g/cc. There are no pressure data in this "
-          "project, so hydrocarbon density cannot be resolved. The absence of neutron-density crossover in the hydrocarbon sands "
+          "project, so hydrocarbon density cannot be resolved. The absence of neutron-density crossover in the hydrocarbon sandstones "
           "argues against gas in the zone the tools read.", "",
           "## Sxo and consistency", "",
-          f"- Sxo uses the header Rmf at formation temperature. In the water sands the unclipped value has a median of "
+          f"- Sxo uses the header Rmf at formation temperature. In the water sandstones the unclipped value has a median of "
           f"{np.nanmedian(sxo_header):.2f}, i.e. above 1: RSFL there reads about {cal['rz_a75']/ex.RMF_75*100:.0f} % of what a fully "
-          "flushed zone would, so filtrate has not fully replaced the saline water near the well. Sxo in water sands is limited to 1.",
-          f"- In the hydrocarbon sands, Sxo averages {hc_sxo:.2f} against Sw {tot['sw_j']:.2f}, and Sxo is below Sw by more than 0.02 at "
+          "flushed zone would, so filtrate has not fully replaced the saline water near the well. Sxo in water sandstones is limited to 1.",
+          f"- In the hydrocarbon sandstones, Sxo averages {hc_sxo:.2f} against Sw {tot['sw_j']:.2f}, and Sxo is below Sw by more than 0.02 at "
           f"only {sxo_flag*100:.0f} % of samples, so Sw and Sxo are consistent with total porosity: invasion displaced part of the hydrocarbon.",
-          f"- Bulk volume water φt·Sw in the hydrocarbon sands: median {bvw.median():.3f}, coefficient of variation "
+          f"- Bulk volume water φt·Sw in the hydrocarbon sandstones: median {bvw.median():.3f}, coefficient of variation "
           f"{bvw.std()/bvw.mean():.2f}; r(φt, Sw) = {np.corrcoef(res.phi_t[in_hc], res.sw_j[in_hc])[0, 1]:.2f}. Sw falls as porosity rises, "
-          "as expected, but BVW is not constant, so these sands are not all at one irreducible saturation.",
+          "as expected, but BVW is not constant, which indicates several rock classes, sandstones not at irreducible saturation, or both; "
+          "the logs alone cannot separate these.",
           f"- Juhasz Sw reaches its lower limit (Sw = Sb, no free water) at {peg*100:.0f} % of net hydrocarbon samples.",
           f"- Core Sw vs. log Sw at the plugs: mean core {core.sw.mean():.2f}, Archie {core.sw_a.mean():.2f}, Juhasz {core.sw_j.mean():.2f}. "
           f"Core So + Sw has a median of {(core.so + core.sw).median():.2f}, so the plugs lost fluid and core Sw is not a reliable check.", "",
-          "## Sensitivity (±10 % on each input, hydrocarbon sands)", "",
-          "Change in mean Juhasz Sw (%), with Rw held, and with Rw recalibrated in the water sands using the same perturbed input.", "",
+          "## Sensitivity (±10 % on each input, hydrocarbon sandstones)", "",
+          "Change in mean Juhasz Sw (%), with Rw held, and with Rw recalibrated in the water sandstones using the same perturbed input.", "",
           sens[["input", "sw_lo", "sw_hi", "sw_rec_lo", "sw_rec_hi", "col_lo", "col_hi"]].map(
               lambda v: v if isinstance(v, str) else ("n/a" if pd.isna(v) else f"{v:+.1f}")).to_markdown(index=False), "",
           "## Effect of the shale-porosity choice (α in book eq. 10.15.11)", "",
@@ -408,8 +409,8 @@ def main():
           "α near 0.5 removes the porosity bias against core but forces about a third of the hydrocarbon samples to Sw = Sb; "
           "α = 1 keeps the saturations physical but reads low against core. The results use α = 1.", "",
           "## Choices made (for the appendix)", "",
-          "- Rt = RIPD with no invasion or shoulder-bed correction (charts not digitized); Rw from bed-center samples at least 1.5 ft inside sands.",
-          "- Rw = median over clean water sands, referred to 75 °F with Arps, not one sand, because the sands disagree by about ±10 %.",
+          "- Rt = RIPD with no invasion or shoulder-bed correction (charts not digitized); Rw from bed-center samples at least 1.5 ft inside sandstones.",
+          "- Rw = median over clean water sandstones, referred to 75 °F with Arps, not one sandstone, because the sandstones disagree by about ±10 %.",
           f"- Temperature linear from {ex.T_SURF:.0f} °F (assumed) at surface to {ex.BHT:.0f} °F at {ex.BHT_DEPTH:.0f} ft.",
           "- Csh = linear GR index capped at φclean, per class and book A.11.b; the GR-to-volume conversion is not applied.",
           f"- φsh = α·φD,sh + (1 − α)·φN,sh with α = {CFG['shale']['alpha']} (book 10.15.11).",
