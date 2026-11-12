@@ -265,6 +265,44 @@ def solve_stage2(obs, p, csh, s, x0, iterations=40):
     return x[..., 0], x[..., 1], cost, np.sqrt(np.mean(r[..., :3] ** 2, axis=-1))
 
 
+# ------------------------------------------------------- grain-coating clay (Project 2)
+DISP_BOUNDS = np.array([[0.005, 0.45],    # phi_s, non-shale porosity
+                        [0.01, 1.0],      # Sws
+                        [0.01, 1.0]])     # Sxos
+
+
+def _res_dispersed(u, obs, csh, p, s):
+    """Weighted residuals for (phi_s, Sws, Sxos): density, neutron, log Rt, log Rxo, three weak priors, damping.
+
+    With s["use_rxo"] false, Rxo is not fitted and the nuclear logs use Sws; Sxos is then left to its prior.
+    """
+    x = to_x(u, DISP_BOUNDS)
+    use_rxo = s.get("use_rxo", True)
+    sxos = x[..., 2] if use_rxo else x[..., 1]     # without Rxo, density and neutron see the uninvaded Sw
+    rhob, nphi, rt, rxo = petro.dispersed_forward(x[..., 0], x[..., 1], sxos, csh, p)
+    (phi0, sphi), (sw0, ssw), (sx0, ssx) = s["phi_prior"], s["sw_prior"], s["sxo_prior"]
+    r = np.stack([(rhob - obs["rhob"]) / s["sigma_rhob"],
+                  (nphi - obs["nphi"]) / s["sigma_nphi"],
+                  (np.log(rt) - obs["log_rt"]) / s["sigma_log_rt"],
+                  (np.log(rxo) - obs["log_rxo"]) / s["sigma_log_rxo"] * use_rxo,
+                  (x[..., 0] - phi0) / sphi, (x[..., 1] - sw0) / ssw, (x[..., 2] - sx0) / ssx], -1)
+    r = np.concatenate([r, U_DAMPING * u], -1)
+    return np.nan_to_num(r, nan=0.0, posinf=1e3, neginf=-1e3)
+
+
+def solve_dispersed(obs, csh, p, s, x0, iterations=40, eps=1e-5):
+    """Bounded least squares for (phi_s, Sws, Sxos) with a finite-difference Jacobian in the unbounded variables."""
+    def resid(u):
+        r = _res_dispersed(u, obs, csh, p, s)
+        J = np.empty(r.shape + (3,))
+        for k in range(3):
+            du = np.zeros(3); du[k] = eps
+            J[..., k] = (_res_dispersed(u + du, obs, csh, p, s) - r) / eps
+        return r, J
+    u, r, cost = lm(resid, to_u(x0, DISP_BOUNDS), iterations)
+    return to_x(u, DISP_BOUNDS), r
+
+
 def sample_parameters(means, stds, k, rng, fixed):
     """Draw k parameter sets. Log-normal for resistivities, normal otherwise.
 

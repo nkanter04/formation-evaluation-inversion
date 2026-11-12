@@ -9,19 +9,21 @@ and core data.
 - **Project 2** (`project2/`): grain-coating (dispersed) clay, single deep resistivity, Archie
   vs. Juhasz saturations. `project2/explore.py` is the data exploration step;
   `project2/interpret.py` and `config/project2.toml` do Tasks 5-7, `project2/permeability.py`
-  does Task 8.
+  does Task 8,
+  `project2/invert.py` is the Monte Carlo inversion (data RHOB, NPHI, Rt; unknowns phi_s, Sws).
 
 ## Commands
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                                   # 27 tests, about 20 s
+python -m pytest -q                                   # 29 tests, about 20 s
 python -m fe_inversion --config config/project1.toml  # Project 1 inversion -> outputs/project1
 python -m fe_inversion.manual_hpv                     # PGE 358 HW 6 hand calculation
 python -m fe_inversion.project_checks                 # Project 1 checks; needs results.csv first
 python project2/explore.py                            # Project 2 figures + summary.md
 python project2/interpret.py                          # Project 2 Archie and Juhasz results
 python project2/permeability.py                       # Project 2 permeability and rock classes
+python project2/invert.py                             # Project 2 Monte Carlo inversion, about 3 min
 ```
 
 The Monte Carlo runs in parallel processes. 1,000 realizations take about a minute on AC

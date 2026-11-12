@@ -189,6 +189,26 @@ def wyllie_porosity(dt, dt_ma, dt_f, cp=1.0):
     return (np.asarray(dt) - dt_ma) / (dt_f - dt_ma) / cp
 
 
+def dispersed_forward(phi_s, sws, sxos, csh, p):
+    """Predicted (RHOB, NPHI, Rt, Rxo) of a sandstone with grain-coating clay (book A.9.1, A.14.6).
+
+    phi_s is non-shale porosity; sws and sxos are non-shale water saturations in the uninvaded and
+    flushed zones. The clay fraction Csh carries the reference shale's density, neutron and porosity.
+    Density and neutron read the flushed zone (mud filtrate + residual hydrocarbon); Rt reads Sw, Rxo reads Sxo.
+    """
+    rho_f = sxos * p["rho_mf"] + (1 - sxos) * p["rho_h"]
+    rhob = phi_s * rho_f + (1 - phi_s - csh) * p["rho_ma"] + csh * p["rho_sh"]
+    hi_f = sxos + (1 - sxos) * p["hi_h"]
+    nphi = phi_s * hi_f + (1 - phi_s - csh) * p["nphi_ma"] + csh * p["nphi_sh"]
+    phi_t = phi_s + csh * p["phi_sh"]
+    sb = csh * p["phi_sh"] / phi_t
+    sw_t = (sws * phi_s + csh * p["phi_sh"]) / phi_t
+    sxo_t = (sxos * phi_s + csh * p["phi_sh"]) / phi_t
+    rt = juhasz_rt(p["rw"], phi_t, sw_t, sb, p["b_w"], p["a"], p["m"], p["n"])
+    rxo = juhasz_rt(p["rmf"], phi_t, sxo_t, sb, p["b_mf"], p["a"], p["m"], p["n"])
+    return rhob, nphi, rt, rxo
+
+
 # ------------------------------------------------------------------ permeability
 MD_TO_UM2 = 9.869e-4  # 1 md in square micrometers
 

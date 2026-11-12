@@ -71,3 +71,31 @@ def test_timur_and_coates_book_forms():
     np.testing.assert_allclose(petro.timur_k(0.3, 0.2, 250, 3, 2), (250 * 0.027 / 0.2) ** 2)
     np.testing.assert_allclose(petro.coates_k(0.3, 0.2, 100, 2, 2), (100 * 0.09 * 0.8 / 0.2) ** 2)
     assert petro.coates_k(0.3, 1.0, 100, 2, 2) == 0.0
+
+
+DISP = dict(rho_mf=1.0, rho_h=0.75, rho_ma=2.65, rho_sh=2.33, hi_h=0.95, nphi_ma=0.0, nphi_sh=0.5, phi_sh=0.2,
+            rw=0.065, rmf=0.69, b_w=10.9, b_mf=8.0, a=1.0, m=2.1, n=1.95)
+
+
+def test_dispersed_forward_clean_water_sandstone_is_archie():
+    rhob, nphi, rt, rxo = petro.dispersed_forward(0.3, 1.0, 1.0, 0.0, DISP)
+    np.testing.assert_allclose(rhob, 0.3 * 1.0 + 0.7 * 2.65)
+    np.testing.assert_allclose(nphi, 0.3)
+    np.testing.assert_allclose(rt, petro.archie_rt(0.065, 0.3, 1.0, 1.0, 2.1, 1.95))
+
+
+def test_dispersed_inversion_round_trip():
+    from fe_inversion import inversion
+    phi_s = np.array([0.30, 0.22, 0.27, 0.15])
+    sws = np.array([0.25, 0.5, 1.0, 0.8])
+    sxos = np.array([0.7, 0.8, 1.0, 0.9])
+    csh = np.array([0.05, 0.15, 0.10, 0.25])
+    rhob, nphi, rt, rxo = petro.dispersed_forward(phi_s, sws, sxos, csh, DISP)
+    obs = dict(rhob=rhob, nphi=nphi, log_rt=np.log(rt), log_rxo=np.log(rxo))
+    s = dict(sigma_rhob=0.02, sigma_nphi=0.025, sigma_log_rt=0.05, sigma_log_rxo=0.1,
+             phi_prior=(0.25, 10.0), sw_prior=(0.5, 10.0), sxo_prior=(0.7, 10.0))
+    x0 = np.tile([0.25, 0.5, 0.7], (4, 1))
+    x, _ = inversion.solve_dispersed(obs, csh, DISP, s, x0, iterations=80)
+    np.testing.assert_allclose(x[:, 0], phi_s, atol=2e-3)
+    np.testing.assert_allclose(x[:, 1], sws, atol=2e-2)
+    np.testing.assert_allclose(x[:, 2], sxos, atol=2e-2)

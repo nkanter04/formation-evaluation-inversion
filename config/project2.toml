@@ -40,3 +40,30 @@ n_classes = 4                # Leverett fairways with equal numbers of plugs
 stress = "3500"              # confining pressure of the core data used: "800" or "3500"
 max_sw = 0.99                # keep log(1 - Sw) finite
 good_rock_phi = 0.25         # core porosity limit for the good-rock correlation check
+
+[inversion]
+# Monte Carlo inversion for (phi_s, Sws, Sxos) per depth; Csh from GR. Means/standard deviations.
+realizations = 200
+chunk = 50                   # realizations solved together (memory control)
+seed = 385
+iterations = 40
+sigma_rhob = 0.02            # g/cc
+sigma_nphi = 0.025           # v/v
+sigma_log_rt = 0.05          # natural-log units
+sigma_log_rxo = 0.20
+use_rxo = false              # class setup: data RHOB, NPHI, Rt. RSFL is not fully flushed in the water sandstones
+phi_prior = [0.25, 0.15]     # weak priors, only active where the data do not decide
+sw_prior = [0.5, 0.5]
+sxo_prior = [0.75, 0.5]
+rho_h = [0.75, 0.12]         # g/cc, liquid hydrocarbon (no crossover; no pressure data)
+hi_h = [0.95, 0.08]
+rho_mf = [1.0, 0.01]         # g/cc, polymer water-based mud filtrate
+rho_ma = [2.65, 0.01]        # g/cc
+shale_shift = [0.03, 0.03]   # sd of shifts to the shale density (g/cc) and neutron (v/v)
+alpha = [0.5, 1.0]           # uniform range of the shale-porosity weight (book eq. 10.15.11)
+m = [2.1, 0.05]
+n = [1.95, 0.05]
+rmf_log_sd = 0.10
+surface_temp_sd = 8.0        # degF
+b_log_sd = 0.30
+gr_endpoint_sd = 5.0         # API
