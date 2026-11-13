@@ -39,6 +39,7 @@ LOG_PARAMS = ("rsh_h", "rsh_v", "rw", "rmf")
 
 
 def to_x(u, bounds=BOUNDS):
+    """Map unbounded u to bounded x (logistic change of variable, after Habashy & Abubakar, 2004, PIER 46, 265-312)."""
     return bounds[:, 0] + (bounds[:, 1] - bounds[:, 0]) / (1.0 + np.exp(-np.clip(u, -50, 50)))
 
 

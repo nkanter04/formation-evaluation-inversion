@@ -16,7 +16,7 @@ and core data.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                                   # 29 tests, about 20 s
+python -m pytest -q                                   # 30 tests, about 20 s
 python -m fe_inversion --config config/project1.toml  # Project 1 inversion -> outputs/project1
 python -m fe_inversion.manual_hpv                     # PGE 358 HW 6 hand calculation
 python -m fe_inversion.project_checks                 # Project 1 checks; needs results.csv first
@@ -64,8 +64,11 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
 - Mud type: Project 1 was **oil-based** (from the instructor; not in the LAS), so an Rmf-based Sxo does not
   apply there. Project 2 is water-based Polyplus (Rmf 1.32 Ω·m at 75 °F). Never assume the mud type.
 - Flat Sw with height does not prove irreducible saturation; each rock class has its own capillary curve.
-- The Larionov (Tertiary) correction was marked not applicable, and neutron-density Csh applies only in
-  an aquifer.
+- Csh relation depends on the clay type (book §8.5): linear Csh = Ish only for laminated shale. Larionov
+  was marked not applicable in Project 1 (laminated) but applies to grain-coating clay (Project 2), where the
+  relation is chosen against neutron-density Csh, which is valid only in water-saturated sandstone.
+- Csh must be 1 in a pure shale; anchor inverted Csh to the shale end-points. Use bed-center samples for
+  cross-plots and calibrations (beds from GR/density gradients, settings in config).
 - Permeability: classify rocks first (Leverett, √(k/φ) as the throat-radius proxy, 4–5
   fairways with equal sample counts, tied to the stratigraphy) and fit each class. Never a
   single k–φ regression over all plugs. Use core values at reservoir stress.

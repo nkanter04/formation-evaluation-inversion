@@ -5,6 +5,8 @@ Writes figures and summary.md to the Project 2 "Exploration" folder.
 """
 from pathlib import Path
 
+import tomllib
+
 import lasio
 import matplotlib
 matplotlib.use("Agg")
@@ -30,7 +32,22 @@ NPHI_SS_TO_LS = -0.04            # CNCF sandstone -> limestone units at zero por
                                  # -0.04), tapering with porosity as on the Schlumberger conversion chart
 
 
+CFG = tomllib.loads((Path(__file__).resolve().parents[1] / "config" / "project2.toml").read_text(encoding="utf-8"))
+QUARTZ, WATER_U = (4.78, 2.65), (0.398, 1.11)   # (U in b/cc, electron density) for the PE-density lines
+
+
 # ----------------------------------------------------------------------------------- loading
+def bed_centers(w):
+    """Mask of bed-center samples: inside beds >= min thickness, away from GR/density boundaries."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from fe_inversion import beds
+    b = CFG["beds"]
+    z = w.index.values
+    idx = beds.boundaries(z, [w.GR.values, w.ZDEN.values], [b["gr_gradient"], b["rho_gradient"]])
+    return pd.Series(beds.thick_bed_centers(z, idx, b["min_thickness_ft"], b["edge_ft"]), index=w.index), len(idx) - 1
+
+
 def ss_to_ls(nphi_ss):
     """Sandstone- to limestone-unit neutron porosity; the same offset as the sandstone line in nd_lines."""
     return nphi_ss + NPHI_SS_TO_LS * (1 - nphi_ss / 0.45 * 0.6)
@@ -205,9 +222,15 @@ def fig_crossplots(df, sands, vsh, path):
                        ylabel="ZDEN (g/cc)", title="(a) Neutron–density, colored by GR")
     a.legend(fontsize=7); plt.colorbar(s, ax=a, label="GR (API)")
     a = ax[0, 1]
-    s = a.scatter(w.GR, w.RIPD, c=w.index, s=4, cmap="viridis_r")
-    a.set(yscale="log", xlabel="GR (API)", ylabel="RIPD (Ω·m)", title="(b) Deep resistivity vs. GR")
-    plt.colorbar(s, ax=a, label="Depth (ft)")
+    fluid = pd.Series("other", index=w.index)
+    fluid[vsh.reindex(w.index) >= 0.6] = "shale"
+    for _, s in sands.iterrows():
+        fluid.loc[s.top:s.base] = {"water": "water", "possible hydrocarbon": "light hydrocarbon"}.get(s.fluid, "other")
+    for lab, col in [("other", "0.75"), ("shale", "#1f77b4"), ("water", "#2ca02c"), ("light hydrocarbon", "#17becf")]:
+        k = fluid == lab
+        a.scatter(w.GR[k], w.RIPD[k], s=4, color=col, label=lab)
+    a.set(yscale="log", xlabel="GR (API)", ylabel="RIPD (Ω·m)", title="(b) Deep resistivity vs. GR, by zone")
+    a.legend(fontsize=7, markerscale=3)
     a = ax[0, 2]
     s = a.scatter(good.GR, good.ZDEN, c=good.RIPD, s=4, cmap="plasma", norm=matplotlib.colors.LogNorm())
     a.set(xlabel="GR (API)", ylabel="ZDEN (g/cc)", ylim=(2.7, 1.8), title="(c) GR vs. bulk density")
@@ -240,7 +263,8 @@ def fig_crossplots(df, sands, vsh, path):
 
 def fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, path):
     w = df.loc[TOP:BASE]
-    good = w[~w.WASHOUT]
+    centers, _ = bed_centers(w)
+    good = w[~w.WASHOUT & centers]
     fig, ax = plt.subplots(1, 2, figsize=(14, 6))
     for a, sub, title in [(ax[0], good, "(a) Whole interval"), (ax[1], good.loc[aquifer[0]:aquifer[1]],
                           f"(b) Water sandstone {aquifer[0]:.0f}–{aquifer[1]:.0f} ft")]:
@@ -256,9 +280,25 @@ def fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, path):
         a.set(xlim=(0, 1), ylim=(0, 0.5), xlabel="Vsh from GR (v/v)", ylabel="Total porosity φD (v/v)", title=title)
         a.grid(alpha=0.3); a.legend(fontsize=8)
         plt.colorbar(s, ax=a, label="Depth (ft)")
-    fig.suptitle(f"Thomas–Stieber diagram (φclean = {phi_clean:.3f}, φsh = {phi_sh:.3f}); Vsh is the linear GR index",
+    fig.suptitle(f"Thomas–Stieber diagram, bed-center samples only (φclean = {phi_clean:.3f}, φsh = {phi_sh:.3f}); Vsh is the linear GR index",
                  fontsize=11)
     fig.tight_layout(); fig.savefig(path, dpi=140); plt.close(fig)
+
+
+def fig_pe_density(clean, aquifer, path):
+    """PE vs. bulk density in the clean water sandstone against water-filled quartz, calcite and dolomite lines."""
+    fig, ax = plt.subplots(figsize=(7.5, 5.8))
+    s = ax.scatter(clean.ZDEN, clean.PE, c=clean.GR, s=14, cmap="viridis")
+    phi = np.linspace(0, 0.45, 30)
+    for name, (u_ma, rho_e), rho_ma, col in [("Quartz", QUARTZ, 2.65, "goldenrod"), ("Calcite", (13.77, 2.708), 2.71, "steelblue"),
+                                             ("Dolomite", (9.0, 2.863), 2.87, "purple")]:
+        pe = (phi * WATER_U[0] + (1 - phi) * u_ma) / (phi * WATER_U[1] + (1 - phi) * rho_e)
+        ax.plot(phi * RHO_F + (1 - phi) * rho_ma, pe, color=col, lw=1.5, label=f"Water-filled {name.lower()}")
+    ax.set(xlim=(1.9, 2.9), ylim=(0, 6), xlabel="Bulk density ZDEN (g/cc)", ylabel="Photoelectric factor PE (b/e)",
+           title=f"PE vs. density in the clean water sandstone, {aquifer[0]:.0f}–{aquifer[1]:.0f} ft")
+    ax.grid(alpha=0.3); ax.legend(fontsize=8)
+    plt.colorbar(s, ax=ax, label="GR (API)")
+    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
 
 def sandstone_nphi_ls(rhob):
@@ -330,6 +370,11 @@ def main():
     fig_crossplots(df, sands, vsh, OUT / "03_crossplots.png")
     fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, OUT / "04_thomas_stieber.png")
     fig_nd_aquifer(cl, aquifer, OUT / "05_nd_aquifer_limestone.png")
+    fig_pe_density(cl, aquifer, OUT / "06_pe_density.png")
+    rho_e_b = 1.0704 * cl.ZDEN - 0.1883                    # electron density from bulk density (Schlumberger)
+    pe_quartz = (cl.PHID * WATER_U[0] + (1 - cl.PHID) * QUARTZ[0]) / (cl.PHID * WATER_U[1] + (1 - cl.PHID) * QUARTZ[1])
+    pe_gap = (cl.PE - pe_quartz).median()
+    centers, n_beds = bed_centers(w)
 
     # core vs. log at the plugs
     core["phid_log"] = np.interp(core.depth_log, df.index, df.PHID)
@@ -346,7 +391,9 @@ def main():
          f"- Caliper more than 1 in over bit size ({BIT} in): {int(w.WASHOUT.sum())} samples ({w.WASHOUT.mean()*100:.0f} %).",
          f"- RTBR has {int(w.BAD_RT.sum())} negative values; RTBR is not used.",
          "- Spectral K/Th/U are zero above 5,238 ft (not recorded there); inside the interval they are present.",
-         "- No Rh/Rv (triaxial) and no deviation survey: shale topology cannot be diagnosed from anisotropy here.", "",
+         "- No Rh/Rv (triaxial) and no deviation survey: shale topology cannot be diagnosed from anisotropy here.",
+         f"- Bed boundaries from GR and density gradients: {n_beds} beds; {centers.mean()*100:.0f} % of samples are bed centers "
+         "(beds ≥ 3 ft, ≥ 1 ft from a boundary). The Thomas–Stieber plot uses bed centers only.", "",
          "## Core", "",
          f"- {len(core)} plugs, cores 1–5, sandstones {', '.join(core.sand.unique())}; log depths "
          f"{core.depth_log.min():.1f}–{core.depth_log.max():.1f} ft.",
@@ -372,6 +419,8 @@ def main():
          "the data and the chart lines together, so it does not change it. A heavier, saline pore fluid would raise "
          "φD and widen the gap, so it is not the cause; a matrix density slightly below 2.65 g/cc (core grain "
          "density 2.63–2.68 g/cc) or the neutron's environmental corrections could account for it. Unresolved.", "",
+         f"- PE vs. density (06_pe_density.png): in the clean water sandstone PE has a median of {cl.PE.median():.2f} b/e, "
+         f"{pe_gap:+.2f} b/e from water-filled quartz at the same porosity, consistent with a dominantly quartz matrix.", "",
          "## Gamma-ray end-points and shales", "",
          f"GR clean {gr_cl:.0f} API, GR shale {gr_sh:.0f} API (3rd/97th percentiles over the interval).", "",
          shales.to_markdown(index=False, floatfmt=".3g"), "",

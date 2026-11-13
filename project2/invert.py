@@ -3,7 +3,7 @@
 Run:  python project2/invert.py
 Writes figures and inversion_summary.md to the Project 2 "Interpretation" folder.
 
-At each depth, Csh comes from the gamma ray (capped at the clean-sandstone porosity), and
+At each depth, Csh comes from the gamma ray through the calibrated relation (capped at the clean-sandstone porosity), and
 (phi_s, Sws, Sxos) are found by minimizing the cost function
 
     Phi = sum over d in {RHOB, NPHI, ln Rt, ln Rxo} of [(d_calc - d_meas) / sigma_d]^2 + weak priors,
@@ -57,7 +57,7 @@ def draw(k, rng, w, shale, gr_ends, phi_clean):
     phid_sh = (C["rho_ma"][0] - rho_sh) / (C["rho_ma"][0] - ex.RHO_F)
     depth = w.index.values[None, :]
     temp = w.TEMP.values[None, :] + rng.normal(0, C["surface_temp_sd"], (k, 1)) * (1 - depth / ex.BHT_DEPTH)
-    return dict(csh=np.minimum(i_gr, phi_clean), i_gr=i_gr, rho_sh=rho_sh, nphi_sh=nphi_sh, phid_sh=phid_sh,
+    return dict(csh=np.minimum(petro.csh_from_ish(i_gr, it._CSH["method"]), phi_clean), i_gr=i_gr, rho_sh=rho_sh, nphi_sh=nphi_sh, phid_sh=phid_sh,
                 phi_sh=alpha * phid_sh + (1 - alpha) * nphi_sh, temp=temp,
                 rho_h=np.clip(g(C["rho_h"]), 0.3, 1.0), hi_h=np.clip(g(C["hi_h"]), 0.5, 1.1), rho_mf=g(C["rho_mf"]),
                 rho_ma=g(C["rho_ma"]), m=g(C["m"]), n=g(C["n"]),
@@ -217,15 +217,18 @@ def main():
 
     L = ["# Project 2: Monte Carlo inversion with grain-coating clay", "",
          "## Method", "",
-         "At every depth (0.5 ft), Csh is taken from the gamma ray (linear index, capped at the clean-sandstone porosity) and the "
+         "At every depth (0.5 ft), Csh is taken from the gamma ray (calibrated relation, capped at the clean-sandstone porosity) and the "
          "unknowns are the non-shale porosity φs and the non-shale water saturations of the uninvaded (Sws) and flushed (Sxos) zones. "
          "They minimize the cost function", "",
          "Φ = [(ρb,calc − ρb)/σρ]² + [(φN,calc − φN)/σN]² + [(ln Rt,calc − ln Rt)/σRt]² + [(ln Rxo,calc − ln Rxo)/σRxo]² + weak priors on φs, Sws and Sxos,", "",
          "where the calculated logs come from the grain-coating clay model (book A.9.1) and Juhasz's equation (A.14.6): "
          "ρb = φs·ρf + (1 − φs − Csh)·ρma + Csh·ρsh, φN likewise with hydrogen index, and 1/Rt = (φt^m·Sw^n/a)(1/Rw + B·Sb/Sw) with "
          "φt = φs + Csh·φsh, Sb = Csh·φsh/φt and Sw = (Sws·φs + Csh·φsh)/φt. Density and neutron read the flushed zone (filtrate and "
-         "residual hydrocarbon), Rt reads Sw and RSFL reads Sxo with Rmf. Bounds: 0.005 ≤ φs ≤ 0.45, 0.01 ≤ Sws, Sxos ≤ 1. "
-         "Solver: Levenberg–Marquardt on the bounded variables.", "",
+         "residual hydrocarbon), Rt reads Sw and RSFL reads Sxo with Rmf. Bounds: 0.005 ≤ φs ≤ 0.45, 0.01 ≤ Sws, Sxos ≤ 1, "
+         "enforced by the change of variable x = x_min + (x_max − x_min)/(1 + e^(−u)), which maps each bounded unknown onto an "
+         "unbounded u (after Habashy & Abubakar, 2004). Solver: Levenberg–Marquardt on u.", "",
+         f"Csh relation: {it._CSH['method']} (see summary.md). RSFL is not fitted (`use_rxo = false`), following the class setup, "
+         "because it does not read a fully flushed zone in the water sandstones.", "",
          f"Monte Carlo: {C['realizations']} realizations. Each redraws the GR end-points (±{C['gr_endpoint_sd']} API), shale density and "
          f"neutron, the shale-porosity weight α ({C['alpha'][0]}–{C['alpha'][1]}), ρh {C['rho_h'][0]} ± {C['rho_h'][1]} g/cc, hydrocarbon "
          f"hydrogen index, ρma, m ({C['m'][0]} ± {C['m'][1]}), n ({C['n'][0]} ± {C['n'][1]}), Rmf (±{C['rmf_log_sd']*100:.0f} %), B "

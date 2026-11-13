@@ -56,6 +56,34 @@ def water_sand_samples(w, sands, vsh):
     return out
 
 
+_CSH = {}
+
+
+def csh_calibration(w, groups, vsh, shale):
+    """Compare GR-based Csh relations with neutron-density Csh at bed centers of the water sandstones (book §8.5)."""
+    if "table" in _CSH:
+        return _CSH["table"], _CSH["method"]
+    phid_sh, phin_sh, _, _ = shale
+    centers, _ = ex.bed_centers(w)
+    m = np.zeros(len(w), bool)
+    for top, base in groups:
+        m |= (w.index.values >= top) & (w.index.values <= base)
+    m &= centers.values & ~w.WASHOUT.values
+    nd = petro.csh_neutron_density(w.NPHI.values, w.PHID.values, phin_sh, phid_sh)[m]
+    ish = vsh.values[m]
+    rows = []
+    for meth in petro.CSH_RELATIONS:
+        e = petro.csh_from_ish(ish, meth) - nd
+        rows.append(dict(relation=meth, bias=float(e.mean()), rms=float(np.sqrt((e ** 2).mean())),
+                         r=float(np.corrcoef(petro.csh_from_ish(ish, meth), nd)[0, 1])))
+    table = pd.DataFrame(rows)
+    method = CFG["csh"]["method"]
+    if method == "auto":
+        method = table.sort_values("rms").relation.iloc[0]
+    _CSH.update(table=table, method=method, n=int(m.sum()), nd_median=float(np.median(nd)), ish_max=float(ish.max()))
+    return table, method
+
+
 # --------------------------------------------------------------------------- calculation
 def calculate(w, vsh, groups, shale, sc=BASE_SCALES, recalibrate=True, fixed=None):
     """Archie and Juhasz results for one set of input scale factors.
@@ -86,7 +114,8 @@ def calculate(w, vsh, groups, shale, sc=BASE_SCALES, recalibrate=True, fixed=Non
     clean = np.concatenate([[pos[d] for d in idx] for idx in groups.values()])
     phi_clean = np.nanpercentile(phi_a[clean], 90)
     i_gr = vsh.values
-    csh = np.minimum(i_gr * sc["csh"], phi_clean)
+    _, method = csh_calibration(w, groups, vsh, shale)
+    csh = np.minimum(petro.csh_from_ish(i_gr, method) * sc["csh"], phi_clean)
     phi_s, phi_t = petro.grain_coating_porosity(phid, phin, csh, phid_sh, phin_sh, phi_sh)
     phi_t = np.maximum(phi_t, 0.01)
     sb = np.minimum(petro.bound_water_fraction(csh, phi_sh, phi_t), 0.99)
@@ -114,7 +143,7 @@ def calculate(w, vsh, groups, shale, sc=BASE_SCALES, recalibrate=True, fixed=Non
     sw_a, sxo_a = np.minimum(sw_a_raw, 1.0), np.minimum(sxo_a_raw, 1.0)
 
     res = pd.DataFrame(dict(
-        temp=temp, i_gr=i_gr, csh=csh, capped=i_gr * sc["csh"] > phi_clean, phi_a=phi_a, phi_s=phi_s, phi_t=phi_t,
+        temp=temp, i_gr=i_gr, csh=csh, capped=petro.csh_from_ish(i_gr, method) * sc["csh"] > phi_clean, phi_a=phi_a, phi_s=phi_s, phi_t=phi_t,
         sb=sb, rw_a=rw_a, rw_j=rw_j, b=b, sw_a_raw=sw_a_raw, sw_a=sw_a, sxo_a=sxo_a, sw_j=sw_j, sxo_j=sxo_j,
         sws=np.clip(petro.sandstone_sw(sw_j, sb), 0, 1), hpv_a=phi_a * (1 - sw_a), wpv_a=phi_a * sw_a,
         hpv_j=phi_t * (1 - sw_j), wpv_j=phi_t * sw_j), index=w.index)
@@ -182,7 +211,7 @@ def fig_results(w, res, sands, core, path):
         ax[1].semilogx(w[k].clip(0.2, 2000), w.index, color=col, lw=0.7, label=k)
     ax[1].set(xlim=(0.3, 300), title="Resistivity (Ω·m)")
     ax[2].plot(res.i_gr, res.index, "0.6", lw=0.6, label="GR index")
-    ax[2].plot(res.csh, res.index, "k", lw=0.8, label="Csh (capped at φclean)"); ax[2].set(xlim=(0, 1), title="Csh (v/v)")
+    ax[2].plot(res.csh, res.index, "k", lw=0.8, label=f"Csh, {_CSH['method']} (capped at φclean)"); ax[2].set(xlim=(0, 1), title="Csh (v/v)")
     ax[3].plot(res.phi_a, res.index, "b", lw=0.7, label="Archie φ (no shale)")
     ax[3].plot(res.phi_t, res.index, "k", lw=0.7, label="φt (Juhasz)")
     ax[3].plot(res.phi_s, res.index, "m", lw=0.6, label="φs (non-shale)")
@@ -290,7 +319,7 @@ def main():
     in_ws = np.zeros(len(w), bool)
     for _, s in ws.iterrows():
         in_ws |= (w.index >= s.top + 1.5) & (w.index <= s.base - 1.5)
-    in_ws &= ~w.WASHOUT.values & (res.csh.values > 0)
+    in_ws &= ~w.WASHOUT.values & (res.csh.values > 0) & ex.bed_centers(w)[0].values
     t_mean = res.temp[in_ws].mean()
     scale = (res.temp[in_ws] + 6.77) / (t_mean + 6.77)           # refer conductivities to the mean temperature
     x = res.sb[in_ws].values
@@ -299,6 +328,17 @@ def main():
     fit, cov = np.polyfit(x[low], y[low], 1, cov=True)
     b_se = float(np.sqrt(cov[0, 0]))
     fit_all = np.polyfit(x, y, 1)
+    # The fitted B depends on how Csh is computed: repeat the fit for every Csh relation.
+    phid_sh, phin_sh, phi_sh_d, _ = shale
+    b_by_rel = {}
+    for rel in petro.CSH_RELATIONS:
+        c_r = np.minimum(petro.csh_from_ish(vsh.values, rel), cal["phi_clean"])
+        _, pt_r = petro.grain_coating_porosity(w.PHID.values, w.NPHI.values, c_r, phid_sh, phin_sh, phi_sh_d)
+        pt_r = np.maximum(pt_r, 0.01)
+        sb_r = petro.bound_water_fraction(c_r, phi_sh_d, pt_r)[in_ws]
+        y_r = (A0 / (w.RIPD[in_ws] * pt_r[in_ws] ** M0) / scale).values
+        k = sb_r < CFG["juhasz"]["fit_max_sb"]
+        b_by_rel[rel] = np.polyfit(sb_r[k], y_r[k], 1)[0]
     rw_t = petro.rw_at_temperature(cal["rw_j75"], 75.0, t_mean)
     b_book = float(petro.waxman_smits_b(t_mean, rw_t))
 
@@ -361,11 +401,22 @@ def main():
          f"Juhasz normalization in the water sandstones, fitted for Sb < {CFG['juhasz']['fit_max_sb']} ({int(low.sum())} samples): "
          f"intercept 1/Rw = {fit[1]:.1f} S/m (Rw = {1/fit[1]:.3f} Ω·m at {t_mean:.0f} °F, or "
          f"{petro.rw_at_temperature(1/fit[1], t_mean, 75.0):.3f} Ω·m at 75 °F), fitted B = {fit[0]:.1f} ± {b_se:.1f}, book eq. A.14.4 B = {b_book:.1f}. "
-         "Clay conduction is not detectable above the scatter in these saline water sandstones, as expected: at Sb = 0.1 the book's B "
-         "adds only about 7 % to the water conductivity. "
+         f"Repeating the fit with each Csh relation gives B from {min(b_by_rel.values()):.1f} to {max(b_by_rel.values()):.1f} "
+         f"({', '.join(f'{k} {v:.1f}' for k, v in b_by_rel.items())}), so these water sandstones cannot determine B and the book's "
+         "value is used. In these saline waters the clay term is small: at Sb = 0.1 the book's B adds only about 7 % to the "
+         "water conductivity. "
          f"Including the shaliest samples the slope rises to {fit_all[0]:.1f}, which likely reflects laminated shale that the "
          "dispersed-clay model does not represent.", "",
          "## Shale and clay", "",
+         f"Csh relation (book §8.5): linear Csh = Ish holds only for laminated systems, so each relation was compared with the "
+         f"neutron-density Csh, which is valid in water-saturated sandstone, at {_CSH['n']} bed-center samples of the water "
+         f"sandstones (shale index up to {_CSH['ish_max']:.2f}):", "",
+         _CSH["table"].to_markdown(index=False, floatfmt=("", "+.3f", ".3f", ".2f")), "",
+         f"Relation used: **{_CSH['method']}**. The relations differ in RMS by only "
+         f"{_CSH['table'].rms.max() - _CSH['table'].rms.min():.3f} because the water sandstones span only a low shale index and the "
+         "neutron-density Csh is noisy, so this check cannot choose between them; the relation was chosen for Tertiary "
+         "sandstones (book §8.5). The check does show that the linear relation reads high on average "
+         f"({_CSH['table'].set_index('relation').bias['linear']:+.3f}).", "",
          f"GR clean {gr_cl:.0f}, GR shale {gr_sh:.0f} API. φclean (Csh cap) = {cal['phi_clean']:.3f}. "
          f"Upper shale φD {sv['upper']['phid']:.3f}, φN {sv['upper']['phin']:.3f}; middle shale φD {sv['middle']['phid']:.3f}, "
          f"φN {sv['middle']['phin']:.3f}. Of the net samples, {res.capped[net].mean()*100:.0f} % have a GR index above the cap.", "",
@@ -412,7 +463,9 @@ def main():
           "- Rt = RIPD with no invasion or shoulder-bed correction (charts not digitized); Rw from bed-center samples at least 1.5 ft inside sandstones.",
           "- Rw = median over clean water sandstones, referred to 75 °F with Arps, not one sandstone, because the sandstones disagree by about ±10 %.",
           f"- Temperature linear from {ex.T_SURF:.0f} °F (assumed) at surface to {ex.BHT:.0f} °F at {ex.BHT_DEPTH:.0f} ft.",
-          "- Csh = linear GR index capped at φclean, per class and book A.11.b; the GR-to-volume conversion is not applied.",
+          f"- Csh = {_CSH['method']} relation of the GR index (chosen against neutron-density Csh in the water sandstones, book §8.5), "
+          "capped at φclean (book A.11.b).",
+          "- Juhasz normalization and the Thomas–Stieber plot use bed-center samples only.",
           f"- φsh = α·φD,sh + (1 − α)·φN,sh with α = {CFG['shale']['alpha']} (book 10.15.11).",
           "- Reference shale by depth: upper shale above 5,885 ft, middle shale below.",
           "- m and n are the assignment's values for both Archie and Juhasz, although book §10.16.a says clay changes them."]

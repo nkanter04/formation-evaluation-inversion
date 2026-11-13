@@ -99,3 +99,12 @@ def test_dispersed_inversion_round_trip():
     np.testing.assert_allclose(x[:, 0], phi_s, atol=2e-3)
     np.testing.assert_allclose(x[:, 1], sws, atol=2e-2)
     np.testing.assert_allclose(x[:, 2], sxos, atol=2e-2)
+
+
+def test_csh_relations_end_points_and_order():
+    for method in petro.CSH_RELATIONS:
+        np.testing.assert_allclose(petro.csh_from_ish(0.0, method), 0.0, atol=1e-9)
+        np.testing.assert_allclose(petro.csh_from_ish(1.0, method), 1.0, atol=0.011)  # Larionov reaches 0.99-0.996
+    # The nonlinear relations give less shale than linear at intermediate index.
+    for method in petro.CSH_RELATIONS[1:]:
+        assert petro.csh_from_ish(0.5, method) < 0.5

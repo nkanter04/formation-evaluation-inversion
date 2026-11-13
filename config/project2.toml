@@ -21,6 +21,18 @@ boundary = 5885.0
 # porosity, because the shale neutron also responds to hydroxyl in the clay structure.
 alpha = 1.0
 
+[csh]
+# Shale index from GR, then a relation from book §8.5 ("auto" would pick the best match to the neutron-density
+# Csh in the water sandstones). That check cannot separate the relations here (RMS within 0.01), so the
+# relation is chosen by geology: the Oficina sandstones are Tertiary (Miocene).
+method = "larionov_tertiary"
+
+[beds]
+gr_gradient = 10.0           # API/ft, bed boundary where the smoothed GR gradient peaks above this
+rho_gradient = 0.05          # g/cc per ft, same for ZDEN
+min_thickness_ft = 3.0
+edge_ft = 1.0                # bed-center samples are at least this far from a boundary
+
 [water_sands]
 max_vsh = 0.12               # GR index limit for clean samples used to calibrate Rw
 edge_ft = 1.5                # stay this far inside the sand (bed-center readings)

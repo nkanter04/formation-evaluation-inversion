@@ -21,6 +21,30 @@ def csh_larionov_tertiary(igr):
     return 0.083 * (2.0 ** (3.7 * np.asarray(igr)) - 1.0)
 
 
+CSH_RELATIONS = ("linear", "larionov_tertiary", "larionov_older", "clavier", "stieber")
+
+
+def csh_from_ish(ish, method):
+    """Csh from the shale index (book §8.5). Linear holds only for laminated sandstone-shale systems."""
+    i = np.clip(np.asarray(ish, float), 0.0, 1.0)
+    if method == "linear":
+        return i
+    if method == "larionov_tertiary":
+        return 0.083 * (2.0 ** (3.7 * i) - 1.0)
+    if method == "larionov_older":
+        return 0.33 * (2.0 ** (2.0 * i) - 1.0)
+    if method == "clavier":
+        return 1.7 - np.sqrt(3.38 - (i + 0.7) ** 2)
+    if method == "stieber":
+        return i / (3.0 - 2.0 * i)
+    raise ValueError(f"unknown Csh relation {method!r}")
+
+
+def csh_neutron_density(phi_n, phi_d, phi_n_sh, phi_d_sh):
+    """Csh from neutron-density separation, valid only in water-saturated sandstone (book §8.5)."""
+    return (np.asarray(phi_n) - np.asarray(phi_d)) / (phi_n_sh - phi_d_sh)
+
+
 def neutron_density_ternary(rhob, nphi, sand, shale, fluid):
     """Solve sand-grain / shale / pore-fluid volumes from density and neutron.
 
