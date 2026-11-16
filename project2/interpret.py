@@ -272,9 +272,11 @@ def hc_density_sensitivity(w, vsh, groups, shale, hc, net, core, res0, cal0):
     w2.loc[sand, "ZDEN"] = w2.ZDEN[sand] - c["density_bias"]
     w2["PHID"] = (CFG["matrix"]["rho_ma"] - w2.ZDEN) / (CFG["matrix"]["rho_ma"] - CFG["matrix"]["rho_filtrate"])
     r2, cal2 = calculate(w2, vsh, groups, shale)
-    out, p = juhasz_hc(w2, r2, cal2, shale, c["rho_h_base"], c["hi_h"])
-    rows.append(row(f"Iterative Juhasz, ZDEN − {c['density_bias']:.3f} g/cc in net sandstone", c["rho_h_base"], out, p))
-    profiles["density"] = out
+    for rh in c["rho_h"]:
+        out, p = juhasz_hc(w2, r2, cal2, shale, rh, c["hi_h"])
+        rows.append(row(f"Iterative Juhasz, ZDEN − {c['density_bias']:.3f} g/cc in net sandstone", rh, out, p))
+        if rh == c["rho_h_base"]:
+            profiles["density"] = out
     # K + Th gamma ray (no uranium) as the shale indicator.
     cgr = 4 * w.TH + 16 * w.K
     lo, hi = np.nanpercentile(cgr, [3, 97])
@@ -401,22 +403,20 @@ def fig_tornado(sens, path):
 
 def fig_hc_density(t, path):
     it = t[t.case == "Iterative Juhasz"]
+    dc = t[t.case.str.contains("ZDEN")]
+    other = t[~t.case.isin(["Iterative Juhasz"]) & ~t.case.str.contains("ZDEN") & t.rho_h.notna()]
     fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
-    ax[0].plot(it.rho_h, it.hpt, "o-", color="#1f5fa8", label="Iterative Juhasz")
-    ax[0].axhline(t.hpt.iloc[0], color="k", ls="--", lw=1, label="Deterministic Juhasz (filtrate only)")
-    for _, r in t.iloc[len(it) + 1:].iterrows():
-        ax[0].plot(r.rho_h, r.hpt, "s", ms=8, label=r.case.replace("Iterative Juhasz, ", ""))
-    ax[0].set(xlabel="Hydrocarbon density ρh (g/cc)", ylabel="HPT in net hydrocarbon sandstones (ft)",
-              title="(a) Hydrocarbon pore thickness")
-    ax[1].plot(it.rho_h, it.bias_core, "o-", color="#1f5fa8", label="Iterative Juhasz")
-    ax[1].axhline(t.bias_core.iloc[0], color="k", ls="--", lw=1, label="Deterministic Juhasz (filtrate only)")
-    for _, r in t.iloc[len(it) + 1:].iterrows():
-        ax[1].plot(r.rho_h, r.bias_core, "s", ms=8, label=r.case.replace("Iterative Juhasz, ", ""))
-    ax[1].axhline(0, color="0.5", lw=0.8)
-    ax[1].set(xlabel="Hydrocarbon density ρh (g/cc)", ylabel="φt − core porosity at the plugs (v/v)",
-              title="(b) Total porosity bias against core (34 plugs)")
-    for a in ax:
+    for a, col, ylab, ttl in [(ax[0], "hpt", "HPT in net hydrocarbon sandstones (ft)", "(a) Hydrocarbon pore thickness"),
+                              (ax[1], "bias_core", "φt − core porosity at the plugs (v/v)",
+                               "(b) Total porosity bias against core (34 plugs)")]:
+        a.plot(it.rho_h, it[col], "o-", color="#1f5fa8", label="Iterative Juhasz, density as logged")
+        a.plot(dc.rho_h, dc[col], "s-", color="#d62728", label="Iterative Juhasz, density corrected (−0.043 g/cc)")
+        a.axhline(t[col].iloc[0], color="k", ls="--", lw=1, label="Deterministic Juhasz (filtrate only)")
+        for _, r in other.iterrows():
+            a.plot(r.rho_h, r[col], "^", ms=8, color="#2ca02c", label=r.case.replace("Iterative Juhasz, ", ""))
+        a.set(xlabel="Hydrocarbon density ρh (g/cc)", ylabel=ylab, title=ttl)
         a.grid(alpha=0.3); a.legend(fontsize=7)
+    ax[1].axhline(0, color="0.5", lw=0.8)
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
 
