@@ -28,8 +28,12 @@ RMF_75, RM_75 = 1.32, 2.52       # ohm-m at 75 degF, log header
 BHT, BHT_DEPTH = 163.0, 6900.0   # degF at logger depth
 T_SURF = 80.0                    # degF, ASSUMED mean surface temperature (not on the header)
 LARGE_ZCOR = 0.10                # g/cc; ZDEN is already corrected, this only marks large corrections
-NPHI_SS_TO_LS = -0.04            # CNCF sandstone -> limestone units at zero porosity (quartz reads about
-                                 # -0.04), tapering with porosity as on the Schlumberger conversion chart
+# Schlumberger chart Por-5 (former Por-13b), thermal neutron NPHI, porosity equivalence: true porosity of
+# quartz sandstone and dolomite against the apparent limestone reading (v/v). Digitized from the curve colours
+# of the 2009 chart book (about ±0.005); the sandstone value at zero porosity was read by eye.
+POR5_PHI = np.array([0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40])
+POR5_SS_LS = np.array([-0.024, 0.0148, 0.0578, 0.1042, 0.1531, 0.2015, 0.2525, 0.3031, 0.3524])
+POR5_DOL_LS = np.array([0.0323, 0.1192, 0.1798, 0.2312, 0.2780, 0.3202, 0.3611, 0.3971, 0.4330])
 
 
 CFG = tomllib.loads((Path(__file__).resolve().parents[1] / "config" / "project2.toml").read_text(encoding="utf-8"))
@@ -48,9 +52,21 @@ def bed_centers(w):
     return pd.Series(beds.thick_bed_centers(z, idx, b["min_thickness_ft"], b["edge_ft"]), index=w.index), len(idx) - 1
 
 
+def _interp_ext(x, xp, fp):
+    """Linear interpolation, extended linearly beyond the last chart point (shales read about 0.5)."""
+    x = np.asarray(x, float)
+    y = np.interp(x, xp, fp)
+    hi = x > xp[-1]
+    return np.where(hi, fp[-1] + (x - xp[-1]) * (fp[-1] - fp[-2]) / (xp[-1] - xp[-2]), y)
+
+
 def ss_to_ls(nphi_ss):
-    """Sandstone- to limestone-unit neutron porosity; the same offset as the sandstone line in nd_lines."""
-    return nphi_ss + NPHI_SS_TO_LS * (1 - nphi_ss / 0.45 * 0.6)
+    """Sandstone- to limestone-unit neutron porosity from chart Por-5 (about -0.047 above 0.15)."""
+    return _interp_ext(nphi_ss, POR5_PHI, POR5_SS_LS)
+
+
+def ls_to_ss(nphi_ls):
+    return _interp_ext(nphi_ls, POR5_SS_LS, POR5_PHI)
 
 
 def load_logs():
@@ -204,12 +220,13 @@ def fig_shift(lags, scan, path):
 
 
 def nd_lines(ax, units="sandstone"):
-    """Approximate neutron response of sandstone, limestone and dolomite (Schlumberger CP-1) in the given units."""
-    phi = np.linspace(0, 0.45, 20)
-    offsets = {"sandstone": (0.0, 0.04, 0.09), "limestone": (-0.04, 0.0, 0.05)}[units]
-    for (name, rho, col), off in zip([("Sandstone", 2.65, "goldenrod"), ("Limestone", 2.71, "steelblue"),
-                                      ("Dolomite", 2.87, "purple")], offsets):
-        ax.plot(phi + off * (1 - phi / 0.45 * 0.6), rho - phi * (rho - 1.0), color=col, lw=1.2, label=name)
+    """Water-filled sandstone, limestone and dolomite lines (fresh water, as chart Por-11) in the given neutron units,
+    with the neutron responses of chart Por-5."""
+    phi = np.linspace(0, 0.40, 21)
+    ls = {"Sandstone": ss_to_ls(phi), "Limestone": phi, "Dolomite": np.interp(phi, POR5_PHI, POR5_DOL_LS)}
+    for name, rho, col in [("Sandstone", 2.65, "goldenrod"), ("Limestone", 2.71, "steelblue"), ("Dolomite", 2.87, "purple")]:
+        x = ls[name] if units == "limestone" else ls_to_ss(ls[name])
+        ax.plot(x, rho - phi * (rho - 1.0), color=col, lw=1.2, label=name)
 
 
 def fig_crossplots(df, sands, vsh, path):
@@ -301,6 +318,59 @@ def fig_pe_density(clean, aquifer, path):
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
 
+# Schlumberger Lith-1 / Lith-2 (course book appendix pp. 239-240). Th/K lines are exact; the mineral boxes were
+# read off the chart grid (about +/-0.1 in K and PE).
+LITH2_RATIOS = (25, 12, 3.5, 2.0, 0.6, 0.3)
+LITH1_PE_K = {"Kaolinite": (0.03, 0.64, 1.58, 1.80), "Montmorillonite": (0.03, 4.93, 1.96, 2.23),
+              "Illite": (3.58, 8.39, 3.27, 3.62), "Muscovite": (7.93, 9.88, 2.23, 2.49), "Chlorite": (0.0, 0.27, 6.17, 6.38),
+              "Glauconite": (3.2, 5.8, 5.33, 7.29), "Biotite": (6.2, 10.0, 6.17, 6.38)}
+LITH1_PE_THK = {"Kaolinite": (10, 30, 1.66, 1.84), "Chlorite": (10, 30, 6.12, 6.36), "Mixed layer": (4.34, 9.71, 1.95, 3.85),
+                "Montmorillonite": (4.34, 9.71, 1.95, 2.22), "Illite": (2.37, 4.77, 3.29, 3.58), "Muscovite": (1.75, 3.24, 2.19, 2.46),
+                "Biotite": (1.75, 3.24, 6.17, 6.36), "Glauconite": (0.76, 1.39, 5.35, 7.30)}
+
+
+def fig_clay_charts(w, vsh, path):
+    """Shale samples on Lith-2 (Th vs. K) and Lith-1 (PE vs. K and PE vs. Th/K), by section."""
+    centers, _ = bed_centers(w)
+    sh = w[(vsh.reindex(w.index) > 0.75) & centers & ~w.WASHOUT & (w.K > 0) & (w.TH > 0)]
+    upper = sh.index < CFG["shale"]["boundary"]
+    groups = [("Upper shale section (above 5,885 ft)", sh[upper], "#d62728"), ("Lower section (below 5,885 ft)", sh[~upper], "#1f77b4")]
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5.8))
+    a = ax[0]
+    kk = np.linspace(0, 5, 10)
+    for r in LITH2_RATIOS:
+        a.plot(kk, r * kk, "k-", lw=0.8)
+        xk = min(4.6, 23.5 / r); a.text(xk, r * xk, f" Th/K = {r}", fontsize=7)
+    a.plot([0, 5], [16.7, 20.1], "r--", lw=1, label="Possible 100 % kaolinite, montmorillonite, illite 'clay line'")
+    for x, y, lab in [(0.45, 16, "Kaolinite"), (1.6, 13, "Mixed-layer clay"), (2.6, 7.5, "Illite"), (3.4, 4.0, "Micas")]:
+        a.text(x, y, lab, fontsize=8, style="italic")
+    a.set(xlim=(0, 5), ylim=(0, 25), xlabel="Potassium K (%)", ylabel="Thorium Th (ppm)", title="(a) Lith-2: Th vs. K")
+    a = ax[1]
+    for name, (k0, k1, p0, p1) in LITH1_PE_K.items():
+        a.add_patch(plt.Rectangle((k0, p0), k1 - k0, p1 - p0, color="#9fa8da", alpha=0.6))
+        a.text(k0, p1 + 0.08, name, fontsize=7)
+    a.set(xlim=(0, 10), ylim=(0, 10), xlabel="Potassium K (%)", ylabel="Photoelectric factor PE (b/e)", title="(b) Lith-1: PE vs. K")
+    a = ax[2]
+    for name, (r0, r1, p0, p1) in LITH1_PE_THK.items():
+        a.add_patch(plt.Rectangle((r0, p0), r1 - r0, p1 - p0, color="#9fa8da", alpha=0.45 if name == "Mixed layer" else 0.6))
+        a.text(r0, p1 + 0.08, name, fontsize=7)
+    a.set(xscale="log", xlim=(0.1, 100), ylim=(0, 10), xlabel="Th/K ratio", ylabel="Photoelectric factor PE (b/e)",
+          title="(c) Lith-1: PE vs. Th/K")
+    for lab, g, col in groups:
+        med = g[["K", "TH", "PE"]].median()
+        ax[0].scatter(g.K, g.TH, s=6, color=col, alpha=0.4)
+        ax[1].scatter(g.K, g.PE, s=6, color=col, alpha=0.4)
+        ax[2].scatter(g.TH / g.K, g.PE, s=6, color=col, alpha=0.4)
+        for a, x, y in [(ax[0], med.K, med.TH), (ax[1], med.K, med.PE), (ax[2], med.TH / med.K, med.PE)]:
+            a.plot(x, y, "*", ms=16, color=col, mec="k", label=f"{lab}: median")
+    for a in ax:
+        a.grid(alpha=0.3); a.legend(fontsize=7, loc="upper right")
+    fig.suptitle("Shale samples (GR index > 0.75, bed centers) on the Schlumberger clay-identification charts; "
+                 "PE of water-filled shale reads below its clay minerals' PE", fontsize=11)
+    fig.tight_layout(); fig.savefig(path, dpi=140); plt.close(fig)
+    return {lab: g[["K", "TH", "PE"]].median().to_dict() | {"n": len(g)} for lab, g, _ in groups}
+
+
 def sandstone_nphi_ls(rhob):
     """Limestone-unit neutron of water-filled quartz sandstone at bulk density rhob (the nd_lines sandstone line)."""
     return ss_to_ls((RHO_MA - rhob) / (RHO_MA - RHO_F))
@@ -312,8 +382,8 @@ def fig_nd_aquifer(clean, aquifer, path):
     s = ax.scatter(clean.NPHI_LS, clean.ZDEN, c=clean.GR, s=12, cmap="viridis")
     nd_lines(ax, units="limestone")
     ax.plot(clean.NPHI_LS.median(), clean.ZDEN.median(), "r*", ms=16, label="Median of clean sandstone")
-    ax.text(0.01, 2.77, f"CNCF converted to limestone units ({NPHI_SS_TO_LS:+.2f} at zero porosity, tapering; chart approximation);\n"
-            "lithology lines approximate (Schlumberger CP-1)", fontsize=7)
+    ax.text(0.01, 2.77, "CNCF converted to limestone units with chart Por-5 (NPHI); lithology lines for fresh water\n"
+            "as chart Por-11, built from the Por-5 neutron responses", fontsize=7)
     ax.set(xlim=(-0.05, 0.45), ylim=(2.8, 1.9), xlabel="Neutron porosity, limestone units (v/v)",
            ylabel="Bulk density ZDEN (g/cc)",
            title=f"Neutron–density in the clean water sandstone, {aquifer[0]:.0f}–{aquifer[1]:.0f} ft (Vsh < 0.1)")
@@ -371,6 +441,7 @@ def main():
     fig_thomas_stieber(df, vsh, aquifer, phi_clean, phi_sh, OUT / "04_thomas_stieber.png")
     fig_nd_aquifer(cl, aquifer, OUT / "05_nd_aquifer_limestone.png")
     fig_pe_density(cl, aquifer, OUT / "06_pe_density.png")
+    clay = fig_clay_charts(w, vsh, OUT / "07_clay_charts.png")
     rho_e_b = 1.0704 * cl.ZDEN - 0.1883                    # electron density from bulk density (Schlumberger)
     pe_quartz = (cl.PHID * WATER_U[0] + (1 - cl.PHID) * QUARTZ[0]) / (cl.PHID * WATER_U[1] + (1 - cl.PHID) * QUARTZ[1])
     pe_gap = (cl.PE - pe_quartz).median()
@@ -406,21 +477,23 @@ def main():
          f"- {int(core.kh_3500_censored.sum())} plugs report kh > 9,999 md (censored).", "",
          "## Neutron units and lithology in the aquifer", "",
          f"CNCF is in sandstone units (from class). For the lithology cross-plot it was converted to limestone units "
-         f"with an offset of {NPHI_SS_TO_LS:+.2f} v/v at zero porosity that tapers with porosity (an approximation "
-         "of the chart conversion), and plotted on the "
+         "with Schlumberger chart Por-5 (NPHI curve, digitized; about -0.047 v/v above 0.15), and plotted on the "
          f"limestone-unit chart lines (05_nd_aquifer_limestone.png). In the clean part of the water sandstone "
          f"({aq.top:.0f}–{aq.base:.0f} ft, Vsh < 0.1, {len(cl)} samples): density φD = {phid_cl:.3f}, "
          f"CNCF = {nphi_cl:.3f} (sandstone units).", "",
          f"- {closer_ss*100:.0f} % of the samples lie closer to the sandstone line than to the limestone line, "
          f"and {near_ss*100:.0f} % within ±0.03 v/v of it: the dominant lithology is quartz sandstone. The median "
          f"sample plots {d_ss.median():+.3f} v/v from the sandstone line, toward lower neutron.",
-         f"- That offset matches the {phid_cl - nphi_cl:.3f} gap between the medians in sandstone units: converting "
-         "units moves "
-         "the data and the chart lines together, so it does not change it. A heavier, saline pore fluid would raise "
+         f"- That offset matches the {phid_cl - nphi_cl:.3f} gap between the medians in sandstone units: the unit "
+         "conversion moves the data and the sandstone line together. A heavier, saline pore fluid would raise "
          "φD and widen the gap, so it is not the cause; a matrix density slightly below 2.65 g/cc (core grain "
          "density 2.63–2.68 g/cc) or the neutron's environmental corrections could account for it. Unresolved.", "",
          f"- PE vs. density (06_pe_density.png): in the clean water sandstone PE has a median of {cl.PE.median():.2f} b/e, "
          f"{pe_gap:+.2f} b/e from water-filled quartz at the same porosity, consistent with a dominantly quartz matrix.", "",
+         "## Clay type from the spectral gamma ray and PE (07_clay_charts.png)", "",
+         "Shale samples (GR index > 0.75, bed centers) on Schlumberger Lith-2 and Lith-1 (book appendix):", "",
+         "| Section | Samples | K (%) | Th (ppm) | Th/K | PE (b/e) |", "|---|---|---|---|---|---|",
+         *[f"| {lab} | {v['n']} | {v['K']:.2f} | {v['TH']:.1f} | {v['TH'] / v['K']:.1f} | {v['PE']:.2f} |" for lab, v in clay.items()], "",
          "## Gamma-ray end-points and shales", "",
          f"GR clean {gr_cl:.0f} API, GR shale {gr_sh:.0f} API (3rd/97th percentiles over the interval).", "",
          shales.to_markdown(index=False, floatfmt=".3g"), "",
