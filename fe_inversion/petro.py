@@ -156,6 +156,18 @@ def grain_coating_porosity(phi_d, phi_n, csh, phi_d_sh, phi_n_sh, phi_sh):
     return phi_s, phi_s + csh * phi_sh
 
 
+def hc_corrected_porosity(phi_dc, phi_nc, sxos, rho_h, hi_h, rho_ma, rho_mf):
+    """Non-shale porosity with residual hydrocarbon in the flushed zone (book A.9).
+
+    The shale-corrected porosities assume filtrate; with Sxos and hydrocarbon (rho_h, hi_h) in the pores,
+    phiS_D = phiDc (rho_ma - rho_mf)/(rho_ma - rho_f) and phiS_N = phiNc / HI_f, with
+    rho_f = Sxos rho_mf + (1 - Sxos) rho_h and HI_f = Sxos + (1 - Sxos) hi_h; phi_s = RMS of the two.
+    """
+    rho_f = sxos * rho_mf + (1 - sxos) * rho_h
+    hi_f = sxos + (1 - sxos) * hi_h
+    return rms_porosity(phi_dc * (rho_ma - rho_mf) / (rho_ma - rho_f), phi_nc / hi_f)
+
+
 def bound_water_fraction(csh, phi_sh, phi_t):
     """Sb = Csh*phi_sh/phi_t, also Juhasz's normalized Qv (book 10.15.13, A.14.5)."""
     return csh * phi_sh / phi_t

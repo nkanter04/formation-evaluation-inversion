@@ -396,6 +396,62 @@ def fig_nd_aquifer(clean, aquifer, path):
 RW_EST = None
 
 
+SEQUENCES = [  # (top, base, label, colour): stacking read from the GR and the sandstone fraction
+    (5400, 5512, "Flooding shale\n(transgressive)", "#c7d3c0"),
+    (5512, 5866, "Upper package: fluvial channels\nand splays; sandstone fraction\nfalls upward into the shale\n(retrogradational top)", "#f6dcc0"),
+    (5866, 5985, "Flooding shale\n(transgressive)", "#c7d3c0"),
+    (5985, 6300, "Lower package: deltaic\ndistributary channels (fining\nupward or blocky) and coarsening-\nupward mouth bars (progradational),\nthin coal at 6,259 ft", "#cfe0f1"),
+]
+
+
+def fig_sequence(w, sands, vsh, path):
+    """GR, Csh, sandstone motifs from the GR trend inside each sandstone, coal, and the sequence interpretation."""
+    fig, ax = plt.subplots(1, 4, figsize=(13, 14), sharey=True, gridspec_kw=dict(width_ratios=[1.2, 1, 0.8, 1.6]))
+    cgr = 4 * w.TH + 16 * w.K
+    ax[0].plot(w.GR, w.index, "g", lw=0.7, label="GR (API)")
+    ax[0].plot(cgr, w.index, "0.4", lw=0.6, label="K + Th GR, 4 Th + 16 K (API)")
+    ax[0].set(xlim=(0, 150), title="Gamma ray", xlabel="API")
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from fe_inversion import petro
+    csh = petro.csh_from_ish(vsh.values, CFG["csh"]["method"])
+    ax[1].fill_betweenx(w.index, 0, csh, color="0.6", label="Shale")
+    ax[1].fill_betweenx(w.index, csh, 1, color="#e8c66a", label="Sandstone")
+    ax[1].set(xlim=(0, 1), title="Csh (Larionov, Tertiary)", xlabel="v/v")
+    motif_col = {"Blocky (channel)": "#d9822b", "Coarsening upward (mouth bar / splay)": "#7fb3e0",
+                 "Fining upward (channel fill)": "#2c5f9e"}
+    a = ax[2]
+    a.axvspan(0, 1, color="#d6d8db")
+    used = set()
+    for _, s in sands.iterrows():
+        z = w.loc[s.top:s.base].GR
+        slope = np.polyfit(z.index, z.values, 1)[0]          # API/ft, positive = GR rises downward
+        motif = ("Coarsening upward (mouth bar / splay)" if slope > 0.3 else
+                 "Fining upward (channel fill)" if slope < -0.3 else "Blocky (channel)")
+        a.fill_between([0, 1], s.top, s.base, color=motif_col[motif], label=None if motif in used else motif)
+        used.add(motif)
+    # Coal: runs of at least 3 ft with low density, high neutron and low GR (single low-density spikes are skipped)
+    flag = ((w.ZDEN < 2.0) & (w.NPHI > 0.4) & (w.GR < 70)).values
+    edges = np.flatnonzero(np.diff(np.r_[0, flag.astype(int), 0]))
+    for i0, i1 in zip(edges[::2], edges[1::2]):
+        z0, z1 = w.index[i0], w.index[i1 - 1]
+        if z1 - z0 >= 2.5:
+            a.fill_between([0, 1], z0, z1, color="k", label=f"Coal ({z0:,.1f}–{z1:,.1f} ft)")
+    a.set(xlim=(0, 1), xticks=[], title="Sandstone motif")
+    a = ax[3]
+    for top, base, lab, col in SEQUENCES:
+        a.fill_between([0, 1], top, base, color=col)
+        a.text(0.5, (top + base) / 2, lab, ha="center", va="center", fontsize=9)
+        a.axhline(top, color="k", lw=0.8)
+    a.set(xlim=(0, 1), xticks=[], title="Sequences")
+    ax[0].set(ylim=(6300, 5400), ylabel="Measured depth (ft)")
+    for x in ax[:2]:
+        x.legend(fontsize=7, loc="lower right"); x.grid(alpha=0.3)
+    ax[2].legend(fontsize=7, loc="upper left", framealpha=0.95)
+    fig.suptitle("ORM-75 sedimentary sequences, 5,400–6,300 ft: motifs from the GR trend inside each sandstone", fontsize=12)
+    fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
+
+
 def main():
     global RW_EST
     OUT.mkdir(exist_ok=True)
@@ -442,6 +498,7 @@ def main():
     fig_nd_aquifer(cl, aquifer, OUT / "05_nd_aquifer_limestone.png")
     fig_pe_density(cl, aquifer, OUT / "06_pe_density.png")
     clay = fig_clay_charts(w, vsh, OUT / "07_clay_charts.png")
+    fig_sequence(w, sands, vsh, OUT / "08_sequence.png")
     rho_e_b = 1.0704 * cl.ZDEN - 0.1883                    # electron density from bulk density (Schlumberger)
     pe_quartz = (cl.PHID * WATER_U[0] + (1 - cl.PHID) * QUARTZ[0]) / (cl.PHID * WATER_U[1] + (1 - cl.PHID) * QUARTZ[1])
     pe_gap = (cl.PE - pe_quartz).median()

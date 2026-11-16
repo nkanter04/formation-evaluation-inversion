@@ -41,6 +41,16 @@ min_samples = 8              # minimum clean samples for a sand to be used
 [juhasz]
 fit_max_sb = 0.20           # fit the water-sand normalization only below this Sb; shalier samples act laminated
 
+[hc_correction]
+# Iterative Juhasz with the flushed-zone hydrocarbon correction of density and neutron porosity.
+rho_h = [0.6, 0.75, 0.8, 0.9, 1.0]   # g/cc, hydrocarbon densities tested; 0.8 is the Por-27 lower bound
+rho_h_base = 0.8
+hi_h = 0.99                  # hydrogen index of the oil (UTAPWeLS C14H30/C16H34 mix at reservoir conditions)
+density_bias = 0.043         # g/cc, ZDEN reads high in net sandstone: 0.026 low density porosity against core x 1.65
+tol = 1e-4                   # convergence of phi_s and Sw
+max_iter = 50
+# K + Th gamma ray for the Csh sensitivity: CGR = 4 Th + 16 K (API), end-points at its 3rd/97th percentiles
+
 [net]
 max_vsh = 0.40               # GR index limit for net reservoir in hydrocarbon columns
 

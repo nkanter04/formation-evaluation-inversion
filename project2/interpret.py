@@ -203,6 +203,114 @@ def alpha_sweep(w, vsh, groups, zones, core):
     return pd.DataFrame(rows)
 
 
+def juhasz_hc(w, res, cal, shale, rho_h, hi_h):
+    """Juhasz with the flushed-zone hydrocarbon correction, iterated until porosity and saturation agree.
+
+    Start from the filtrate-only porosity (Sxos = 1); each pass computes phi_t and Sb, solves Juhasz for Sw
+    (Rt, Rw) and Sxo (RSFL, Rmf), converts Sxo to the sandstone-pore value Sxos, and recomputes the
+    sandstone porosity with the residual hydrocarbon of density rho_h. Stops when phi_s and Sw change by
+    less than the tolerance. Returns (Series phi_s, phi_t, sw, sxo, sb), passes needed per sample.
+    """
+    c = CFG["hc_correction"]
+    phid_sh, phin_sh, phi_sh, _ = shale
+    csh, temp = res.csh.values, w.TEMP.values
+    phi_dc = np.maximum(w.PHID.values - csh * phid_sh, 0.0)
+    phi_nc = np.maximum(w.NPHI.values - csh * phin_sh, 0.0)
+    rw = petro.rw_at_temperature(cal["rw_j75"], 75.0, temp)
+    rmf = petro.rw_at_temperature(ex.RMF_75, 75.0, temp)
+    b, b_z = petro.waxman_smits_b(temp, rw), petro.waxman_smits_b(temp, rmf)
+    rho_mf = CFG["matrix"]["rho_filtrate"]
+    rho_ma = CFG["matrix"]["rho_ma"]
+    sxos = np.ones(len(w))
+    phi_s = sw = None
+    passes = np.zeros(len(w), int)
+    for it in range(1, c["max_iter"] + 1):
+        new_phi = petro.hc_corrected_porosity(phi_dc, phi_nc, sxos, rho_h, hi_h, rho_ma, rho_mf)
+        phi_t = np.maximum(new_phi + csh * phi_sh, 0.01)
+        sb = np.minimum(petro.bound_water_fraction(csh, phi_sh, phi_t), 0.99)
+        new_sw = petro.juhasz_sw(w.RIPD.values, rw, phi_t, sb, b, A0, M0, N0)
+        sxo = petro.juhasz_sw(w.RSFL.values, rmf, phi_t, sb, b_z, A0, M0, N0)
+        sxos = np.clip(petro.sandstone_sw(sxo, sb), 0.0, 1.0)
+        if phi_s is not None:
+            moving = (np.abs(new_phi - phi_s) > c["tol"]) | (np.abs(new_sw - sw) > c["tol"])
+            passes[moving] = it
+            if not moving.any():
+                phi_s, sw = new_phi, new_sw
+                break
+        phi_s, sw = new_phi, new_sw
+    out = pd.DataFrame(dict(phi_s=phi_s, phi_t=phi_t, sw=sw, sxo=sxo, sb=sb, hpv=phi_t * (1 - sw)), index=w.index)
+    return out, passes + 1
+
+
+def hc_density_sensitivity(w, vsh, groups, shale, hc, net, core, res0, cal0):
+    """HPT, Sw and porosity bias against core for each hydrocarbon density, a density correction and K+Th Csh."""
+    c = CFG["hc_correction"]
+    m = np.zeros(len(w), bool)
+    for _, s in hc.iterrows():
+        m |= (w.index >= s.top) & (w.index <= s.base)
+    m &= net.values
+
+    def row(case, rho_h, out, passes):
+        e = np.interp(core.depth_log, out.index, out.phi_t) - core.phi_3500
+        return dict(case=case, rho_h=rho_h, hpt=float(out.hpv[m].sum() * STEP), sw=float(out.sw[m].mean()),
+                    phi_t=float(out.phi_t[m].mean()), bias_core=float(e.mean()), rms_core=float(np.sqrt((e ** 2).mean())),
+                    passes_max=int(passes[m].max()), passes_median=float(np.median(passes[m])))
+
+    base = pd.DataFrame(dict(phi_t=res0.phi_t, sw=res0.sw_j, hpv=res0.hpv_j), index=w.index)
+    e0 = np.interp(core.depth_log, w.index, res0.phi_t) - core.phi_3500
+    rows = [dict(case="Deterministic Juhasz (filtrate only)", rho_h=np.nan, hpt=float(base.hpv[m].sum() * STEP),
+                 sw=float(base.sw[m].mean()), phi_t=float(base.phi_t[m].mean()), bias_core=float(e0.mean()),
+                 rms_core=float(np.sqrt((e0 ** 2).mean())), passes_max=1, passes_median=1.0)]
+    profiles = {}
+    for rh in c["rho_h"]:
+        out, p = juhasz_hc(w, res0, cal0, shale, rh, c["hi_h"])
+        rows.append(row("Iterative Juhasz", rh, out, p))
+        profiles[rh] = out
+    # Density reading high in net sandstone (mudcake / pad standoff): correct ZDEN and recalibrate Rw.
+    w2 = w.copy()
+    sand = vsh.reindex(w.index).values < CFG["net"]["max_vsh"]
+    w2.loc[sand, "ZDEN"] = w2.ZDEN[sand] - c["density_bias"]
+    w2["PHID"] = (CFG["matrix"]["rho_ma"] - w2.ZDEN) / (CFG["matrix"]["rho_ma"] - CFG["matrix"]["rho_filtrate"])
+    r2, cal2 = calculate(w2, vsh, groups, shale)
+    out, p = juhasz_hc(w2, r2, cal2, shale, c["rho_h_base"], c["hi_h"])
+    rows.append(row(f"Iterative Juhasz, ZDEN − {c['density_bias']:.3f} g/cc in net sandstone", c["rho_h_base"], out, p))
+    profiles["density"] = out
+    # K + Th gamma ray (no uranium) as the shale indicator.
+    cgr = 4 * w.TH + 16 * w.K
+    lo, hi = np.nanpercentile(cgr, [3, 97])
+    i_cgr = pd.Series(petro.gr_index(cgr.values, lo, hi), index=w.index)
+    r3, cal3 = calculate(w, i_cgr, groups, shale)
+    out, p = juhasz_hc(w, r3, cal3, shale, c["rho_h_base"], c["hi_h"])
+    rows.append(row(f"Iterative Juhasz, Csh from K + Th GR ({lo:.0f}–{hi:.0f} API)", c["rho_h_base"], out, p))
+    return pd.DataFrame(rows), profiles, m
+
+
+LAYERS = Path(__file__).resolve().parents[1] / "config" / "project2_layers.csv"
+
+
+def layer_results(w, res, hc):
+    """Bed-centre medians for each UTAPWeLS layer (tops in config/project2_layers.csv) and layer HPT."""
+    tops = pd.read_csv(LAYERS, comment="#").top_ft.values
+    bases = np.r_[tops[1:], ex.BASE]
+    centers, _ = ex.bed_centers(w)
+    rows = []
+    for i, (t, b) in enumerate(zip(tops, bases), 1):
+        if b <= ex.TOP:
+            continue
+        k = (res.index >= t) & (res.index < b)
+        kc = k & centers.values
+        use = kc if kc.sum() >= 2 else k
+        if use.sum() == 0:
+            continue
+        z = res[use]
+        in_hc = any((t < s.base) and (b > s.top) for _, s in hc.iterrows())
+        rows.append(dict(layer=i, top=t, base=b, h=b - max(t, ex.TOP), i_gr=z.i_gr.median(), csh=z.csh.median(),
+                         phi_t=z.phi_t.median(), sw_a=z.sw_a.median(), sw_j=z.sw_j.median(), hc=in_hc))
+    L = pd.DataFrame(rows)
+    L["hpt_j"] = L.h * L.phi_t * (1 - L.sw_j)
+    return L
+
+
 # ------------------------------------------------------------------------------- figures
 def fig_results(w, res, sands, core, path):
     fig, ax = plt.subplots(1, 7, figsize=(17, 15), sharey=True)
@@ -291,6 +399,57 @@ def fig_tornado(sens, path):
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
 
 
+def fig_hc_density(t, path):
+    it = t[t.case == "Iterative Juhasz"]
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
+    ax[0].plot(it.rho_h, it.hpt, "o-", color="#1f5fa8", label="Iterative Juhasz")
+    ax[0].axhline(t.hpt.iloc[0], color="k", ls="--", lw=1, label="Deterministic Juhasz (filtrate only)")
+    for _, r in t.iloc[len(it) + 1:].iterrows():
+        ax[0].plot(r.rho_h, r.hpt, "s", ms=8, label=r.case.replace("Iterative Juhasz, ", ""))
+    ax[0].set(xlabel="Hydrocarbon density ρh (g/cc)", ylabel="HPT in net hydrocarbon sandstones (ft)",
+              title="(a) Hydrocarbon pore thickness")
+    ax[1].plot(it.rho_h, it.bias_core, "o-", color="#1f5fa8", label="Iterative Juhasz")
+    ax[1].axhline(t.bias_core.iloc[0], color="k", ls="--", lw=1, label="Deterministic Juhasz (filtrate only)")
+    for _, r in t.iloc[len(it) + 1:].iterrows():
+        ax[1].plot(r.rho_h, r.bias_core, "s", ms=8, label=r.case.replace("Iterative Juhasz, ", ""))
+    ax[1].axhline(0, color="0.5", lw=0.8)
+    ax[1].set(xlabel="Hydrocarbon density ρh (g/cc)", ylabel="φt − core porosity at the plugs (v/v)",
+              title="(b) Total porosity bias against core (34 plugs)")
+    for a in ax:
+        a.grid(alpha=0.3); a.legend(fontsize=7)
+    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
+
+
+def fig_layers(L, path):
+    s = L[L.i_gr < 0.75]
+    fig, ax = plt.subplots(figsize=(6.8, 6))
+    sc = ax.scatter(s.sw_a, s.sw_j, c=s.csh, s=10 + 4 * s.h, cmap="viridis", edgecolor="k", lw=0.3)
+    ax.plot([0, 1], [0, 1], "k--", lw=1, label="1:1")
+    ax.set(xlim=(0, 1.02), ylim=(0, 1.02), xlabel="Archie Sw (no shale), bed-centre median (v/v)",
+           ylabel="Juhasz Sw, bed-centre median (v/v)", title="Archie vs. Juhasz Sw by UTAPWeLS layer (size: thickness)")
+    plt.colorbar(sc, ax=ax, label="Csh (v/v)")
+    ax.grid(alpha=0.3); ax.legend(fontsize=8)
+    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
+
+
+def fig_density_core(dc, path):
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4.6))
+    for g, col in (("A", "#1f77b4"), ("E", "#d62728")):
+        t = dc[dc.group == g]
+        ax[0].scatter(t.phi, t.phid, color=col, marker="o", label=f"{g} sandstones: density φD")
+        ax[0].scatter(t.phi, t.nphi, color=col, marker="^", facecolor="none", label=f"{g} sandstones: CNCF (sandstone units)")
+        ax[1].scatter(t.zcor, t.phid - t.phi, color=col, label=f"{g} sandstones")
+    ax[0].plot([0.2, 0.36], [0.2, 0.36], "k--", lw=1, label="1:1")
+    ax[0].set(xlabel="Core porosity at 3,500 psi (v/v)", ylabel="Log porosity, ±1 ft average (v/v)",
+              title="(a) Density and neutron porosity against core (kh > 10 md)")
+    ax[1].axhline(0, color="k", lw=0.8)
+    ax[1].set(xlabel="Density correction applied, ZCOR (g/cc)", ylabel="φD − core porosity (v/v)",
+              title="(b) Density misfit against the density correction")
+    for a in ax:
+        a.grid(alpha=0.3); a.legend(fontsize=7)
+    fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
+
+
 # ---------------------------------------------------------------------------------- main
 def main():
     OUT.mkdir(exist_ok=True)
@@ -371,13 +530,46 @@ def main():
     tot = hc_summary(res, hc)
     sens, b0 = sensitivity(w, vsh, groups, shale, hc, cal)
     alpha_table = alpha_sweep(w, vsh, groups, hc, core)
+    hc_table, hc_profiles, hc_mask = hc_density_sensitivity(w, vsh, groups, shale, hc, net, core, res, cal)
+    layers = layer_results(w, res, hc)
+    hl = layers[layers.hc & (layers.i_gr < CFG["net"]["max_vsh"])]
+
+    # Density and neutron against core in the permeable plugs (log averaged over +/-1 ft)
+    dc = []
+    for _, c in core[core.phi_3500.notna()].iterrows():
+        z = w.loc[c.depth_log - 1:c.depth_log + 1]
+        dc.append(dict(depth=c.depth_log, group=str(c.sand)[0], k=c.kh_3500, phi=c.phi_3500, rho_g=c.rho_grain,
+                       phid=z.PHID.mean(), nphi=z.NPHI.mean(), zden=z.ZDEN.mean(), cal=z.CAL.mean(), zcor=z.ZCOR.mean()))
+    dc = pd.DataFrame(dc)
+    dc = dc[dc.k > 10]
+    dc["rho_f_app"] = dc.rho_g - (dc.rho_g - dc.zden) / dc.phi
+    dens = dict(n=len(dc), d_phid=float((dc.phid - dc.phi).mean()), d_nphi=float((dc.nphi - dc.phi).mean()),
+                rho_f=float(dc.rho_f_app.median()), r_zcor=float(np.corrcoef(dc.phid - dc.phi, dc.zcor)[0, 1]),
+                by_group={g: (len(t), float((t.phid - t.phi).mean()), float((t.nphi - t.phi).mean()), float(t.cal.mean()))
+                          for g, t in dc.groupby("group")})
+
+    # SP with a separate shale baseline for each sequence (upper shale above the boundary, middle shale below)
+    sp_up = w.loc[slice(*CFG["shale"]["upper"])].SP.median()
+    sp_mid = w.loc[slice(*CFG["shale"]["middle"])].SP.median()
+    sp_rows = []
+    for key, idx in groups.items():
+        z = w.loc[idx]; t = z.TEMP.mean()
+        base = sp_up if key[1] < CFG["shale"]["boundary"] else sp_mid
+        sp = ex.rw_from_sp(z.SP.median() - base, t)
+        sp_rows.append(dict(sandstone=f"{key[0]:.0f}–{key[1]:.0f}", baseline=base, ssp=z.SP.median() - base,
+                            rw_sp75=petro.rw_at_temperature(sp["rw"], t, 75.0), rw_j75=cal["rw_j_sands"][key]))
+    sp_seq = pd.DataFrame(sp_rows)
 
     fig_results(w, res, sands, core, OUT / "01_results.png")
     fig_rw(rw_table, cal["rw_a75"], cal["rw_j75"], OUT / "02_rw_by_sand.png")
     fig_compare(res, core, net, OUT / "03_comparisons.png")
     fig_juhasz_plot(x, y, fit, b_book, CFG["juhasz"]["fit_max_sb"], OUT / "04_juhasz_normalization.png")
     fig_tornado(sens, OUT / "05_sensitivity.png")
+    fig_hc_density(hc_table, OUT / "10_hc_density_sensitivity.png")
+    fig_layers(layers, OUT / "11_layers_archie_juhasz.png")
+    fig_density_core(dc, OUT / "12_density_vs_core.png")
     res.round(5).to_csv(OUT / "results.csv", index_label="depth_ft")
+    layers.round(4).to_csv(OUT / "layers.csv", index=False)
 
     sv = shale[3]
     wsamples = np.concatenate([np.array(i) for i in groups.values()])
@@ -481,6 +673,22 @@ def main():
           alpha_table.to_markdown(index=False, floatfmt=(".1f", ".3f", "+.3f", ".2f", ".3f", ".0f")), "",
           "α near 0.5 removes the porosity bias against core but forces about a third of the hydrocarbon samples to Sw = Sb; "
           "α = 1 keeps the saturations physical but reads low against core. The results use α = 1.", "",
+          "## Iterative Juhasz with the hydrocarbon correction, and hydrocarbon density", "",
+          "Porosity and saturation are solved together: start from the filtrate-only sandstone porosity, solve Juhasz for Sw "
+          "(RIPD, Rw) and Sxo (RSFL, Rmf), convert Sxo to the sandstone-pore value Sxos = (Sxo − Sb)/(1 − Sb), recompute the "
+          "sandstone porosity with residual hydrocarbon of density ρh in the flushed zone, and repeat until φs and Sw change by "
+          f"less than {CFG['hc_correction']['tol']:g}. Net hydrocarbon sandstones:", "",
+          hc_table.to_markdown(index=False, floatfmt=("", ".2f", ".2f", ".3f", ".3f", "+.3f", ".3f", ".0f", ".1f")), "",
+          "## Density and neutron against core (plugs above 10 md, log averaged over ±1 ft)", "",
+          f"{dens['n']} plugs: density porosity − core {dens['d_phid']:+.3f}, CNCF − core {dens['d_nphi']:+.3f}; apparent pore-fluid "
+          f"density (core porosity and grain density) median {dens['rho_f']:.2f} g/cc; r(φD − core, ZCOR) = {dens['r_zcor']:.2f}. "
+          + "; ".join(f"{g} sandstones: {v[0]} plugs, φD − core {v[1]:+.3f}, CNCF − core {v[2]:+.3f}, caliper {v[3]:.2f} in"
+                      for g, v in dens["by_group"].items()) + ".", "",
+          "## SP with a shale baseline per sequence", "",
+          sp_seq.to_markdown(index=False, floatfmt=("", "+.1f", "+.1f", ".3f", ".3f")), "",
+          "## Bed-centre results by UTAPWeLS layer", "",
+          f"{len(layers)} layers; hydrocarbon layers with GR index < {CFG['net']['max_vsh']}: {len(hl)}, total thickness "
+          f"{hl.h.sum():.1f} ft, HPT from bed-centre medians {hl.hpt_j.sum():.2f} ft (sample-by-sample {tot['col_j']:.2f} ft).", "",
           "## Choices made (for the appendix)", "",
           "- Rt = RIPD with no invasion or shoulder-bed correction (charts not digitized); Rw from bed-center samples at least 1.5 ft inside sandstones.",
           "- Rw = median over clean water sandstones, referred to 75 °F with Arps, not one sandstone, because the sandstones disagree by about ±10 %.",
