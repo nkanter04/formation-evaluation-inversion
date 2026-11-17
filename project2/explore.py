@@ -1,7 +1,7 @@
 """PGE 385K Homework Project 2: load, quality-check and visualize the logs and core data.
 
 Run:  python project2/explore.py
-Writes figures and summary.md to the Project 2 "Exploration" folder.
+Writes figures and summary.md to the Project 2 "4 Python Figures and Results/Exploration" folder.
 """
 from pathlib import Path
 
@@ -16,9 +16,11 @@ import pandas as pd
 
 P2 = Path(r"C:\Users\nkant\OneDrive\The University of Texas at Austin\Fall 2026\PGE 385K - Adv. Formation Eval"
           r"\PGE 385K - Homework Problems\Homework Projects\Homework Project No. 2")
-LAS = P2 / "Data" / "HA_2_reader_compatible.las"
-CORE = P2 / "Data" / "HA2_core_data.xls"
-OUT = P2 / "Exploration"
+RAW = P2 / "2 Raw Data (Canvas)"
+RESULTS = P2 / "4 Python Figures and Results"
+LAS = RAW / "HA_2_reader_compatible.las"
+CORE = RAW / "HA2_core_data.xls"
+OUT = RESULTS / "Exploration"
 
 TOP, BASE = 5400.0, 6300.0
 BIT = 8.375                      # in, log header

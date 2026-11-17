@@ -52,8 +52,9 @@ max_iter = 50
 # K + Th gamma ray for the Csh sensitivity: CGR = 4 Th + 16 K (API), end-points at its 3rd/97th percentiles
 
 [cji]
-# UTAPWeLS compositional joint inversion exports (in the Project 2 folder), one per run
-files = ["CJI_CALC_prefCurve_PntbyPnt_20261116_013515.las", "CJI_CALC_prefCurve_PntbyPnt_20261116_043055.las"]
+# UTAPWeLS compositional joint inversion exports, one per run (folder relative to the Project 2 folder)
+folder = "3 UTAPWeLS/CJI exports"
+files = ["CJI Run 1 - upper section 5454-5866 ft.las", "CJI Run 2 - lower section 5964-6300 ft.las"]
 
 [net]
 max_vsh = 0.40               # GR index limit for net reservoir in hydrocarbon columns

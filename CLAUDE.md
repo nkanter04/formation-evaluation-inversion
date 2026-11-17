@@ -31,12 +31,16 @@ power; on battery Windows throttles the CPU. Use `--realizations 100` for quick 
 
 ## Data and outputs
 
-- Input data is **not** in the repo. It lives in OneDrive under
-  `.../PGE 385K - Homework Problems/Homework Projects/Homework Project No. N/Data/`, and the
-  paths are absolute in `config/project1.toml` and at the top of `project2/explore.py`. If
-  the user reorganizes those folders, update the paths.
-- `outputs/` is untracked. Project 2 writes into its OneDrive project folder (`Exploration/`,
-  `Interpretation/`).
+- Input data is **not** in the repo. Each OneDrive project folder
+  (`.../PGE 385K - Homework Problems/Homework Projects/Homework Project No. N/`) has the same
+  layout: `1 Assignment/`, `2 Raw Data (Canvas)/`, `3 UTAPWeLS/` (session `.mat`, `CJI exports/`),
+  `4 Python Figures and Results/`, `5 Report/` (final report; Project 2 also `Report Source/`
+  with `build_report.py`). Paths are absolute in `config/project1.toml` and at the top of
+  `project2/explore.py`; the CJI export folder is in `config/project2.toml`. If the user
+  reorganizes those folders, update the paths.
+- `outputs/` is untracked. Project 1 writes to `outputs/project1` (a copy is in its
+  `4 Python Figures and Results/`). Project 2 writes into `4 Python Figures and Results/`
+  (`Exploration/`, `Interpretation/`).
 - LAS files are read with `lasio`. Some exported CSVs round depth to 0.1 ft or to five
   significant digits; match depths by sample index or use the LAS output, not rounded CSV
   depths.

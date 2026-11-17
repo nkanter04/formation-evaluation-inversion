@@ -30,7 +30,7 @@ def load_cji():
     """CJI curves of all runs on the 0.5 ft log depths, with the derived volumes."""
     parts = []
     for name in CFG["cji"]["files"]:
-        c = lasio.read(str(ex.P2 / name)).df()
+        c = lasio.read(str(ex.P2 / CFG["cji"]["folder"] / name)).df()
         c.index = c.index.round(1)
         parts.append(c)
     c = pd.concat(parts).sort_index()
@@ -73,7 +73,7 @@ def main():
            "Monte Carlo P50 (Python)": m.hpv.values}
     cum = {k: np.cumsum(np.where(net, v, 0.0)) * STEP for k, v in hpv.items()}
 
-    runs = [(lasio.read(str(ex.P2 / f)).df().index.min(), lasio.read(str(ex.P2 / f)).df().index.max())
+    runs = [(lasio.read(str(ex.P2 / CFG["cji"]["folder"] / f)).df().index.min(), lasio.read(str(ex.P2 / CFG["cji"]["folder"] / f)).df().index.max())
             for f in CFG["cji"]["files"]]
     # Plot every method on the same samples: the CJI intervals, with gaps (NaN) where nothing was inverted so
     # lines break, and Sw and HPV blanked in shale (GR index > 0.75), where sandstone saturation has no meaning.

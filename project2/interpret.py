@@ -23,7 +23,7 @@ import explore as ex  # noqa: E402
 from fe_inversion import petro  # noqa: E402
 
 CFG = tomllib.loads((ROOT / "config" / "project2.toml").read_text(encoding="utf-8"))
-OUT = ex.P2 / "Interpretation"
+OUT = ex.RESULTS / "Interpretation"
 A0, M0, N0 = (CFG["archie"][k] for k in "amn")
 STEP = 0.5
 BASE_SCALES = dict(rw=1.0, phi=1.0, rt=1.0, rxo=1.0, m=1.0, n=1.0, csh=1.0, phi_sh=1.0, b=1.0)
@@ -410,7 +410,7 @@ def fig_hc_density(t, path):
                               (ax[1], "bias_core", "φt − core porosity at the plugs (v/v)",
                                "(b) Total porosity bias against core (34 plugs)")]:
         a.plot(it.rho_h, it[col], "o-", color="#1f5fa8", label="Iterative Juhasz, density as logged")
-        a.plot(dc.rho_h, dc[col], "s-", color="#d62728", label="Iterative Juhasz, density corrected (−0.043 g/cc)")
+        a.plot(dc.rho_h, dc[col], "s-", color="#d62728", label="Iterative Juhasz, ZDEN − 0.043 g/cc (sensitivity)")
         a.axhline(t[col].iloc[0], color="k", ls="--", lw=1, label="Deterministic Juhasz (filtrate only)")
         for _, r in other.iterrows():
             a.plot(r.rho_h, r[col], "^", ms=8, color="#2ca02c", label=r.case.replace("Iterative Juhasz, ", ""))
