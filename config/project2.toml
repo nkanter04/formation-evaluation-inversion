@@ -51,6 +51,10 @@ tol = 1e-4                   # convergence of phi_s and Sw
 max_iter = 50
 # K + Th gamma ray for the Csh sensitivity: CGR = 4 Th + 16 K (API), end-points at its 3rd/97th percentiles
 
+[cji]
+# UTAPWeLS compositional joint inversion exports (in the Project 2 folder), one per run
+files = ["CJI_CALC_prefCurve_PntbyPnt_20261116_013515.las", "CJI_CALC_prefCurve_PntbyPnt_20261116_043055.las"]
+
 [net]
 max_vsh = 0.40               # GR index limit for net reservoir in hydrocarbon columns
 

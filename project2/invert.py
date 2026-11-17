@@ -88,7 +88,8 @@ def calibrate_rw(w, groups, d):
 def run(w, groups, det, cal, shale, gr_ends):
     rng = np.random.default_rng(C["seed"])
     n_real, n_dep = C["realizations"], len(w)
-    keys = ("phi_s", "sws", "sxos", "phi_t", "sw_t", "hpv", "misfit", "res_rhob", "res_nphi", "res_rt", "res_rxo", "at_sb", "sb")
+    keys = ("phi_s", "sws", "sxos", "phi_t", "sw_t", "hpv", "misfit", "res_rhob", "res_nphi", "res_rt", "res_rxo", "at_sb", "sb",
+            "csh")
     out = {k: np.empty((n_real, n_dep), np.float32) for k in keys}
     rw_all = np.empty(n_real)
     x_det = np.stack([np.clip(det.phi_s.values, 0.02, 0.4), np.clip(det.sws.values, 0.05, 0.98),
@@ -113,6 +114,7 @@ def run(w, groups, det, cal, shale, gr_ends):
         out["at_sb"][sl] = x[..., 1] < 0.02
         out["sb"][sl] = d["csh"] * d["phi_sh"] / phi_t
         out["phi_t"][sl] = phi_t
+        out["csh"][sl] = d["csh"]
         out["sw_t"][sl] = (x[..., 1] * x[..., 0] + d["csh"] * d["phi_sh"]) / phi_t
         out["hpv"][sl] = x[..., 0] * (1 - x[..., 1])
         out["misfit"][sl] = np.sqrt(np.mean(r[..., :4 if C["use_rxo"] else 3] ** 2, axis=-1))
@@ -210,6 +212,8 @@ def main():
     fit = pd.DataFrame(fit_rows)
 
     fig_tracks(w, out, det, core, sands, it.OUT / "08_inversion_tracks.png")
+    pd.DataFrame({k: pct(out[k], 50) for k in ("csh", "phi_s", "phi_t", "sws", "sw_t", "hpv")},
+                 index=pd.Index(z, name="depth_ft")).round(5).to_csv(it.OUT / "inversion_p50.csv")
     fig_fit_and_column(out, cols, det_cols, it.OUT / "09_inversion_fit_column.png")
     core_phi = np.interp(core.depth_log, z, pct(out["phi_t"], 50))
     e = core_phi - core.phi_3500
