@@ -3,6 +3,7 @@
 Run:  python project2/explore.py
 Writes figures and summary.md to the Project 2 "4 Python Figures and Results/Exploration" folder.
 """
+import sys
 from pathlib import Path
 
 import tomllib
@@ -13,6 +14,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from fe_inversion.charts import (POR5_DOL_LS, POR5_PHI, POR5_SS_LS, ls_to_ss, nd_lines,  # noqa: E402,F401
+                                 ss_to_ls)
 
 P2 = Path(r"C:\Users\nkant\OneDrive\The University of Texas at Austin\Fall 2026\PGE 385K - Adv. Formation Eval"
           r"\PGE 385K - Homework Problems\Homework Projects\Homework Project No. 2")
@@ -30,12 +35,7 @@ RMF_75, RM_75 = 1.32, 2.52       # ohm-m at 75 degF, log header
 BHT, BHT_DEPTH = 163.0, 6900.0   # degF at logger depth
 T_SURF = 80.0                    # degF, ASSUMED mean surface temperature (not on the header)
 LARGE_ZCOR = 0.10                # g/cc; ZDEN is already corrected, this only marks large corrections
-# Schlumberger chart Por-5 (former Por-13b), thermal neutron NPHI, porosity equivalence: true porosity of
-# quartz sandstone and dolomite against the apparent limestone reading (v/v). Digitized from the curve colours
-# of the 2009 chart book (about ±0.005); the sandstone value at zero porosity was read by eye.
-POR5_PHI = np.array([0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40])
-POR5_SS_LS = np.array([-0.024, 0.0148, 0.0578, 0.1042, 0.1531, 0.2015, 0.2525, 0.3031, 0.3524])
-POR5_DOL_LS = np.array([0.0323, 0.1192, 0.1798, 0.2312, 0.2780, 0.3202, 0.3611, 0.3971, 0.4330])
+
 
 
 CFG = tomllib.loads((Path(__file__).resolve().parents[1] / "config" / "project2.toml").read_text(encoding="utf-8"))
@@ -52,23 +52,6 @@ def bed_centers(w):
     z = w.index.values
     idx = beds.boundaries(z, [w.GR.values, w.ZDEN.values], [b["gr_gradient"], b["rho_gradient"]])
     return pd.Series(beds.thick_bed_centers(z, idx, b["min_thickness_ft"], b["edge_ft"]), index=w.index), len(idx) - 1
-
-
-def _interp_ext(x, xp, fp):
-    """Linear interpolation, extended linearly beyond the last chart point (shales read about 0.5)."""
-    x = np.asarray(x, float)
-    y = np.interp(x, xp, fp)
-    hi = x > xp[-1]
-    return np.where(hi, fp[-1] + (x - xp[-1]) * (fp[-1] - fp[-2]) / (xp[-1] - xp[-2]), y)
-
-
-def ss_to_ls(nphi_ss):
-    """Sandstone- to limestone-unit neutron porosity from chart Por-5 (about -0.047 above 0.15)."""
-    return _interp_ext(nphi_ss, POR5_PHI, POR5_SS_LS)
-
-
-def ls_to_ss(nphi_ls):
-    return _interp_ext(nphi_ls, POR5_SS_LS, POR5_PHI)
 
 
 def load_logs():
@@ -219,16 +202,6 @@ def fig_shift(lags, scan, path):
            title="Core-to-log depth check")
     ax.grid(alpha=0.3); ax.legend(fontsize=8)
     fig.tight_layout(); fig.savefig(path, dpi=150); plt.close(fig)
-
-
-def nd_lines(ax, units="sandstone"):
-    """Water-filled sandstone, limestone and dolomite lines (fresh water, as chart Por-11) in the given neutron units,
-    with the neutron responses of chart Por-5."""
-    phi = np.linspace(0, 0.40, 21)
-    ls = {"Sandstone": ss_to_ls(phi), "Limestone": phi, "Dolomite": np.interp(phi, POR5_PHI, POR5_DOL_LS)}
-    for name, rho, col in [("Sandstone", 2.65, "goldenrod"), ("Limestone", 2.71, "steelblue"), ("Dolomite", 2.87, "purple")]:
-        x = ls[name] if units == "limestone" else ls_to_ss(ls[name])
-        ax.plot(x, rho - phi * (rho - 1.0), color=col, lw=1.2, label=name)
 
 
 def fig_crossplots(df, sands, vsh, path):

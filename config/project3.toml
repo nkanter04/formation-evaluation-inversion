@@ -1,0 +1,36 @@
+# PGE 385K Homework Project No. 3: rock classes, permeability and saturation functions (North Sea, 16/28-A05).
+# Log depths are MD in ft; core and pressure-test depths are in metres in the source files and converted to ft.
+
+[interval]
+top = 8150.0
+base = 9000.0
+
+[archie]
+a = 1.0
+m = 2.1
+n = 1.9
+
+[matrix]
+rho_ma = 2.65            # g/cc, quartz (median core grain density checked in explore.py)
+rho_f = 1.0              # g/cc, for density porosity
+
+[quality]
+bit = 12.25              # in, BS curve
+washout_in = 1.0         # caliper more than this over bit size
+hdra_max = 0.10          # g/cc, density correction flagged above this
+rho_min = 1.9            # g/cc, density outside this range is not formation
+rho_max = 2.95
+
+[depth_shift]
+max_shift_ft = 20.0      # search range for the core-to-log shift
+step_ft = 0.5
+
+[pressure]
+column = "ORIGINAL"      # depletion-corrected pressure from the RFT file; PRESSURE is the depleted measurement
+min_mobility = 5.0       # md/cp; points below this are shown but not fitted (possible supercharging)
+min_points = 4           # per fluid segment
+psi_per_ft_per_gcc = 0.4335
+
+[zones]
+max_gr_index = 0.4       # sandstone bodies for the zone table
+min_ft = 4.0
